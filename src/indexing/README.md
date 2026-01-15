@@ -299,7 +299,9 @@ Use Azure Portal Debug Sessions for troubleshooting:
 
 ## Troubleshooting
 
-### Common Issues
+For detailed troubleshooting guidance, see the [Indexer Troubleshooting Guide](../../docs/indexer-troubleshooting.md).
+
+### Quick Troubleshooting Tips
 
 **1. Indexer fails with "Cannot read file data"**
 - Ensure `allowSkillsetToReadFileData: true` in indexer
@@ -324,6 +326,16 @@ Use Azure Portal Debug Sessions for troubleshooting:
 - Ensure storage account has LastModified metadata enabled
 - Verify `dataChangeDetectionPolicy` is configured
 - Check search service has "Storage Blob Data Contributor" role
+
+### Using Debug Sessions
+
+Debug Sessions in Azure Portal allow you to:
+- Inspect the enrichment tree at each step
+- View skill inputs and outputs in real-time
+- Test configuration changes without redeploying
+- Debug failed enrichments with detailed errors
+
+See the [Troubleshooting Guide](../../docs/indexer-troubleshooting.md#debug-sessions-api) for detailed instructions.
 
 ### Monitoring
 
