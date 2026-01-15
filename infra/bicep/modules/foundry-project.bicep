@@ -1,16 +1,16 @@
 // ============================================================================
-// Azure AI Foundry Project Module
+// Microsoft Foundry Project Module (Hubless Architecture)
 // ============================================================================
-// This module creates an Azure AI Foundry (formerly Azure AI Studio) project
-// which provides:
-// - Centralized hub for AI model deployments
-// - Built-in connections to Azure OpenAI and AI Services
-// - Managed identity for secure service-to-service authentication
-// - Integration with Azure Machine Learning for advanced scenarios
-//
-// The hub-project model allows:
-// - Hub: Shared resources and governance across multiple projects
-// - Project: Isolated workspace for specific applications
+// This module provisions the modern Microsoft Foundry resources using the
+// account + project model introduced in 2025. Compared to the legacy
+// hub/project pattern, this template:
+// - Eliminates the intermediate Azure AI Foundry hub resource
+// - Deploys a single Microsoft Foundry account (Cognitive Services resource)
+//   with project management enabled
+// - Creates a default project under that account for agent development
+// - Enables managed identities and disables local auth for least-privilege
+// - Exposes outputs compatible with downstream modules (model deployments,
+//   RBAC, search skillsets)
 // ============================================================================
 
 targetScope = 'resourceGroup'
@@ -19,247 +19,109 @@ targetScope = 'resourceGroup'
 // Parameters
 // ============================================================================
 
-@description('Azure region for deployment')
+@description('Azure region where Microsoft Foundry resources will reside')
 param location string
 
-@description('Project name prefix for resource naming')
+@description('Project name prefix used as part of resource naming')
 param projectName string
 
-@description('Environment name (dev, prod)')
+@description('Short environment moniker (for example: dev, prod)')
 param environmentName string
 
-@description('Unique suffix for globally unique names')
+@description('Unique suffix to guarantee global uniqueness across accounts')
 param uniqueSuffix string
 
-@description('Resource tags')
+@description('Tags applied to every resource for governance and cost tracking')
 param tags object
 
 // ============================================================================
 // Variables
 // ============================================================================
 
-// Azure AI Hub name (shared resource)
-var hubName = 'aih-${projectName}-${environmentName}-${uniqueSuffix}'
+// Base label used for all Foundry identities. Lowercasing avoids subdomain
+// validation issues and replacing underscores ensures DNS compatibility.
+var baseLabel = replace(toLower('${projectName}-${environmentName}-${uniqueSuffix}'), '_', '-')
 
-// Azure AI Project name (workspace)
-var aiProjectName = 'aip-${projectName}-${environmentName}-${uniqueSuffix}'
+// Microsoft Foundry account (Cognitive Services account with AIServices kind)
+var foundryAccountName = 'fdry-${baseLabel}'
 
-// Azure OpenAI service name
-// Must be globally unique across all of Azure
-var openAIName = 'aoai-${projectName}-${environmentName}-${uniqueSuffix}'
+// Foundry project resource name. Projects are scoped to the account and must
+// remain globally unique within that account only, but we reuse the same suffix
+// for clarity.
+var foundryProjectName = 'proj-${baseLabel}'
 
-// AI Services multi-service account name
-// Provides access to various Cognitive Services APIs
-var aiServicesName = 'ais-${projectName}-${environmentName}-${uniqueSuffix}'
-
-// Storage account for AI project artifacts and logs
-// Shorten name to fit 24-char limit
-var projectShortName = substring(projectName, 0, min(length(projectName), 5))
-var envShortName = substring(environmentName, 0, 1)
-var projectStorageName = 'staip${projectShortName}${envShortName}${uniqueSuffix}'
-
-// Key Vault for storing secrets and connection strings
-// Key Vault names have 24-char limit
-var keyVaultName = 'kv-${projectShortName}-${envShortName}-${uniqueSuffix}'
-
-// Application Insights for monitoring and telemetry
-var appInsightsName = 'appi-${projectName}-${environmentName}-${uniqueSuffix}'
+// Human-friendly values surface inside the Foundry portal.
+var projectDisplayName = 'DrivingManualAgent ${toUpper(environmentName)}'
+var projectDescription = 'Microsoft Foundry project for DrivingManualAgent (${environmentName})'
 
 // ============================================================================
-// Azure OpenAI Service
+// Microsoft Foundry Account (Cognitive Services)
 // ============================================================================
 
-// Deploy Azure OpenAI service for hosting GPT and embedding models
-// SKU: S0 is the standard tier with pay-as-you-go pricing
-resource openAI 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
-  name: openAIName
+resource aiFoundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
+  name: foundryAccountName
   location: location
-  kind: 'OpenAI'
-  sku: {
-    name: 'S0' // Standard SKU required for GPT-4o and embedding models
-  }
-  properties: {
-    customSubDomainName: openAIName // Required for API endpoint
-    publicNetworkAccess: 'Enabled' // Allow access from internet; use 'Disabled' for private endpoints
-    networkAcls: {
-      defaultAction: 'Allow' // Control network access; use 'Deny' with IP rules for production
-    }
-  }
-  tags: tags
-}
-
-// ============================================================================
-// AI Services Multi-Service Account
-// ============================================================================
-
-// Deploy AI Services account for additional cognitive capabilities
-// Provides access to Computer Vision, Language, etc.
-resource aiServices 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
-  name: aiServicesName
-  location: location
-  kind: 'AIServices' // Multi-service account
-  sku: {
-    name: 'S0' // Standard tier
-  }
-  properties: {
-    customSubDomainName: aiServicesName
-    publicNetworkAccess: 'Enabled'
-  }
-  tags: tags
-}
-
-// ============================================================================
-// Supporting Resources
-// ============================================================================
-
-// Storage account for AI project metadata and logs
-resource projectStorage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: projectStorageName
-  location: location
-  kind: 'StorageV2'
-  sku: {
-    name: 'Standard_LRS' // Locally redundant storage for cost efficiency
-  }
-  properties: {
-    accessTier: 'Hot'
-    allowBlobPublicAccess: false // Security best practice
-    minimumTlsVersion: 'TLS1_2' // Enforce secure connections
-  }
-  tags: tags
-}
-
-// Key Vault for secure secret storage
-resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
-  name: keyVaultName
-  location: location
-  properties: {
-    sku: {
-      family: 'A'
-      name: 'standard'
-    }
-    tenantId: subscription().tenantId
-    enableRbacAuthorization: true // Use RBAC instead of access policies
-    enableSoftDelete: true // Protect against accidental deletion
-    softDeleteRetentionInDays: 7
-  }
-  tags: tags
-}
-
-// Application Insights for telemetry and monitoring
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: appInsightsName
-  location: location
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    publicNetworkAccessForIngestion: 'Enabled'
-    publicNetworkAccessForQuery: 'Enabled'
-  }
-  tags: tags
-}
-
-// ============================================================================
-// Azure AI Foundry Hub
-// ============================================================================
-
-// Create AI Hub (shared resource layer)
-// The hub provides governance and shared resources for multiple projects
-resource aiHub 'Microsoft.MachineLearningServices/workspaces@2024-04-01' = {
-  name: hubName
-  location: location
-  kind: 'Hub' // Designates this as a hub workspace
+  kind: 'AIServices'
   identity: {
-    type: 'SystemAssigned' // Enable managed identity
+    type: 'SystemAssigned' // Managed identity enables RBAC-secured data access
+  }
+  sku: {
+    name: 'S0' // Pay-as-you-go tier supporting GPT-4o and embedding deployments
   }
   properties: {
-    friendlyName: 'DrivingManualAgent Hub - ${environmentName}'
-    description: 'Azure AI Foundry Hub for DrivingManualAgent project'
-    storageAccount: projectStorage.id
-    keyVault: keyVault.id
-    applicationInsights: appInsights.id
-    // Hub does not have a container registry requirement
-    publicNetworkAccess: 'Enabled'
+    allowProjectManagement: true // Required for Foundry projects as child resources
+    customSubDomainName: foundryAccountName // Enables API access via aiFoundry.properties.endpoint
+    defaultProject: foundryProjectName // Route data plane calls to the default project
+    disableLocalAuth: true // Enforce Azure AD based access; no shared keys
+    publicNetworkAccess: 'Enabled' // Keep public endpoint (Private Link handled elsewhere)
+    restrictOutboundNetworkAccess: false // Outbound egress governed by downstream network policy
+    storedCompletionsDisabled: false // Allow persisted logs for analytics (can be toggled later)
+    dynamicThrottlingEnabled: true // Helps smooth bursty workloads in dev environments
   }
   tags: tags
 }
 
 // ============================================================================
-// Azure AI Foundry Project
+// Microsoft Foundry Project
 // ============================================================================
 
-// Create AI Project (application workspace)
-// The project is where model deployments and agent code execute
-resource aiProject 'Microsoft.MachineLearningServices/workspaces@2024-04-01' = {
-  name: aiProjectName
+resource aiProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
+  parent: aiFoundry
+  name: foundryProjectName
   location: location
-  kind: 'Project' // Designates this as a project workspace
   identity: {
-    type: 'SystemAssigned' // Enable managed identity for secure access
+    type: 'SystemAssigned' // Used for Search/Storage role assignments
   }
   properties: {
-    friendlyName: 'DrivingManualAgent Project - ${environmentName}'
-    description: 'Azure AI Foundry Project for DrivingManualAgent application'
-    hubResourceId: aiHub.id // Link to parent hub
-    publicNetworkAccess: 'Enabled'
+    displayName: projectDisplayName
+    description: projectDescription
   }
   tags: tags
-}
-
-// ============================================================================
-// Hub Connections
-// ============================================================================
-
-// Create connection from Hub to Azure OpenAI
-// This makes the OpenAI service available to all projects in the hub
-resource openAIConnection 'Microsoft.MachineLearningServices/workspaces/connections@2024-04-01' = {
-  parent: aiHub
-  name: 'aoai-connection'
-  properties: {
-    category: 'AzureOpenAI' // Connection type
-    authType: 'AAD' // Use Azure AD authentication (managed identity)
-    isSharedToAll: true // Share with all projects in hub
-    target: openAI.properties.endpoint
-    metadata: {
-      ApiVersion: '2024-02-01'
-      ApiType: 'Azure'
-      ResourceId: openAI.id
-    }
-  }
-}
-
-// Create connection from Hub to AI Services
-resource aiServicesConnection 'Microsoft.MachineLearningServices/workspaces/connections@2024-04-01' = {
-  parent: aiHub
-  name: 'aiservices-connection'
-  properties: {
-    category: 'AIServices'
-    authType: 'AAD'
-    isSharedToAll: true
-    target: aiServices.properties.endpoint
-    metadata: {
-      ResourceId: aiServices.id
-    }
-  }
 }
 
 // ============================================================================
 // Outputs
 // ============================================================================
 
-@description('Azure AI Project name')
+@description('Microsoft Foundry account (Cognitive Services) resource name')
+output foundryAccountName string = aiFoundry.name
+
+@description('HTTPS endpoint for Microsoft Foundry APIs (replaces legacy OpenAI endpoint)')
+output foundryEndpoint string = aiFoundry.properties.endpoint
+
+@description('Default Microsoft Foundry project name')
 output projectName string = aiProject.name
 
-@description('Azure AI Project endpoint')
-output projectEndpoint string = aiProject.properties.discoveryUrl
-
-@description('Azure AI Project managed identity principal ID')
+@description('Managed identity principal ID for the Foundry project')
 output projectPrincipalId string = aiProject.identity.principalId
 
-@description('Azure OpenAI service name')
-output openAIName string = openAI.name
+@description('Display name assigned to the Foundry project in the portal')
+output projectDisplayName string = projectDisplayName
 
-@description('Azure OpenAI endpoint')
-output openAIEndpoint string = openAI.properties.endpoint
+// Backward-compatible aliases maintained for existing modules/tests consuming
+// the earlier output contract. These map directly to the new Foundry resources.
+@description('Legacy alias: Azure OpenAI service name (maps to Foundry account)')
+output openAIName string = aiFoundry.name
 
-@description('AI Services name')
-output aiServicesName string = aiServices.name
+@description('Legacy alias: Azure OpenAI endpoint (maps to Foundry endpoint)')
+output openAIEndpoint string = aiFoundry.properties.endpoint

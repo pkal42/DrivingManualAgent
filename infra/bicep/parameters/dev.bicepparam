@@ -32,12 +32,15 @@ param gpt4oCapacity = 50
 // Can be lowered to 50 if indexing performance is acceptable
 param embeddingCapacity = 100
 
+// GPT-4.1 default capacity mirrors GPT-4o for parity in dev
+param gpt41Capacity = 50
+
 // Resource Tags
 // Used for cost tracking, resource organization, and governance
 param tags = {
   project: 'DrivingManualAgent'
   environment: 'dev'
   managedBy: 'Bicep'
-  costCenter: 'Engineering'
+  costCenter: 'Innovation'
   owner: 'development-team'
 }

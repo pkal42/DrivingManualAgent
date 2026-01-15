@@ -3,7 +3,7 @@
 // ============================================================================
 // This template orchestrates the deployment of all Azure resources required
 // for the DrivingManualAgent project. It creates:
-// - Azure AI Foundry project with model deployments
+// - Microsoft Foundry account + project with model deployments
 // - Azure AI Search service for vector and semantic search
 // - Azure Storage account for documents and images
 // - RBAC role assignments for secure access between services
@@ -57,6 +57,11 @@ param gpt4oCapacity int = 50
 @maxValue(500)
 param embeddingCapacity int = 100
 
+@description('GPT-4.1 model deployment capacity (in thousands of tokens per minute).')
+@minValue(1)
+@maxValue(500)
+param gpt41Capacity int = 50
+
 @description('Tags to apply to all resources for cost tracking and organization.')
 param tags object = {
   project: 'DrivingManualAgent'
@@ -90,8 +95,8 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 // Module Deployments
 // ============================================================================
 
-// Deploy Azure AI Foundry project and hub
-// This includes the OpenAI connection and AI Services endpoint
+// Deploy Microsoft Foundry account + project (hubless)
+// Provides the API endpoint and managed identity used by downstream resources
 module foundryProject 'modules/foundry-project.bicep' = {
   scope: resourceGroup
   name: 'deploy-foundry-project'
@@ -105,14 +110,15 @@ module foundryProject 'modules/foundry-project.bicep' = {
 }
 
 // Deploy AI model deployments (GPT-4o, text-embedding-3-large)
-// These models are deployed within the Azure OpenAI service
+// These models are deployed within the Microsoft Foundry account
 module modelDeployments 'modules/model-deployments.bicep' = {
   scope: resourceGroup
   name: 'deploy-models'
   params: {
-    openAIName: foundryProject.outputs.openAIName
+    foundryAccountName: foundryProject.outputs.foundryAccountName
     gpt4oCapacity: gpt4oCapacity
     embeddingCapacity: embeddingCapacity
+    gpt41Capacity: gpt41Capacity
   }
 }
 
@@ -165,11 +171,14 @@ module roleAssignments 'modules/role-assignments.bicep' = {
 @description('Name of the deployed resource group')
 output resourceGroupName string = resourceGroup.name
 
-@description('Name of the Azure AI Foundry project')
+@description('Name of the Microsoft Foundry project')
 output aiProjectName string = foundryProject.outputs.projectName
 
-@description('Endpoint URL for the Azure AI project')
-output aiProjectEndpoint string = foundryProject.outputs.projectEndpoint
+@description('Microsoft Foundry endpoint URL (shared for all projects)')
+output foundryEndpoint string = foundryProject.outputs.foundryEndpoint
+
+@description('Legacy alias: project endpoint (kept for backward compatibility)')
+output aiProjectEndpoint string = foundryProject.outputs.foundryEndpoint
 
 @description('Name of the Azure AI Search service')
 output searchServiceName string = aiSearch.outputs.searchServiceName
@@ -188,6 +197,9 @@ output extractedImagesContainerName string = storage.outputs.extractedImagesCont
 
 @description('GPT-4o model deployment name')
 output gpt4oDeploymentName string = modelDeployments.outputs.gpt4oDeploymentName
+
+@description('GPT-4.1 model deployment name')
+output gpt41DeploymentName string = modelDeployments.outputs.gpt41DeploymentName
 
 @description('Text-embedding-3-large model deployment name')
 output embeddingDeploymentName string = modelDeployments.outputs.embeddingDeploymentName

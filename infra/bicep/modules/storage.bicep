@@ -96,9 +96,8 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
     // Blobs must be accessed via SAS tokens or managed identity
     allowBlobPublicAccess: false
     
-    // Allow shared key access (for dev convenience)
-    // In production, consider disabling and using only Azure AD
-    allowSharedKeyAccess: true
+    // Block shared key authentication so callers must use Azure AD tokens
+    allowSharedKeyAccess: false
     
     // HTTPS-only traffic
     supportsHttpsTrafficOnly: true

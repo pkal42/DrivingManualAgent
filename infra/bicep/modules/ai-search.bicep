@@ -103,17 +103,16 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' = {
     semanticSearch: skuName != 'basic' ? 'standard' : 'disabled'
     
     // Authentication options
-    // Support both API key and Azure AD authentication
-    // Recommend using Azure AD (managed identity) in production
+    // Support Azure AD tokens while keeping API keys disabled via disableLocalAuth
+    // Managed identity is required for all data-plane calls
     authOptions: {
       aadOrApiKey: {
         aadAuthFailureMode: 'http401WithBearerChallenge'
       }
     }
     
-    // Disable local (API key) authentication in production for enhanced security
-    // For dev, keep enabled for easier testing
-    disableLocalAuth: environmentName == 'prod' ? true : false
+    // Disable local (API key) authentication in every environment for consistent managed identity usage
+    disableLocalAuth: true
   }
   tags: tags
 }

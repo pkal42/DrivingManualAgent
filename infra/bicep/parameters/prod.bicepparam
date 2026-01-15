@@ -36,6 +36,9 @@ param gpt4oCapacity = 150
 // Can be scaled down after initial indexing is complete
 param embeddingCapacity = 200
 
+// Align GPT-4.1 throughput with GPT-4o for consistent latency envelopes
+param gpt41Capacity = 150
+
 // Resource Tags
 // Used for cost tracking, resource organization, and governance
 param tags = {

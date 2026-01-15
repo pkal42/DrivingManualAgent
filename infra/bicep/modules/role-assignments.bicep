@@ -15,9 +15,9 @@
 //    - Search Index Data Contributor: Read/write access to search indexes
 //    - Needed for: Agent to query search indexes for retrieval
 //
-// 3. AI Project → AI Services (OpenAI):
+// 3. AI Project → Microsoft Foundry account:
 //    - Cognitive Services User: Access to AI models
-//    - Note: This is typically configured via AI Foundry connections
+//    - Note: Direct connections are configured via Foundry service principals
 //
 // All role assignments use managed identities (no secrets/keys)
 // ============================================================================
