@@ -15,7 +15,7 @@ using '../main.bicep'
 // Environment Configuration
 param environmentName = 'prod'
 param location = 'eastus'
-param projectName = 'drivingagent'
+param projectName = 'drvagent'
 
 // Azure AI Search Configuration
 // Standard tier required for production workloads

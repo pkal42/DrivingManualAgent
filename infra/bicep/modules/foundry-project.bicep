@@ -53,10 +53,14 @@ var openAIName = 'aoai-${projectName}-${environmentName}-${uniqueSuffix}'
 var aiServicesName = 'ais-${projectName}-${environmentName}-${uniqueSuffix}'
 
 // Storage account for AI project artifacts and logs
-var projectStorageName = 'staip${projectName}${environmentName}${uniqueSuffix}'
+// Shorten name to fit 24-char limit
+var projectShortName = substring(projectName, 0, min(length(projectName), 5))
+var envShortName = substring(environmentName, 0, 1)
+var projectStorageName = 'staip${projectShortName}${envShortName}${uniqueSuffix}'
 
 // Key Vault for storing secrets and connection strings
-var keyVaultName = 'kv-${projectName}-${environmentName}-${uniqueSuffix}'
+// Key Vault names have 24-char limit
+var keyVaultName = 'kv-${projectShortName}-${envShortName}-${uniqueSuffix}'
 
 // Application Insights for monitoring and telemetry
 var appInsightsName = 'appi-${projectName}-${environmentName}-${uniqueSuffix}'

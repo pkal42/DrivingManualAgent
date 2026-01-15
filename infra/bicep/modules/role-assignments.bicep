@@ -70,10 +70,6 @@ var searchIndexDataContributorRoleId = '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
 // Useful for administrative tasks
 var searchServiceContributorRoleId = '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
 
-// Cognitive Services User role
-// Permissions: Read and list keys, use Cognitive Services
-var cognitiveServicesUserRoleId = 'a97b65f3-24c7-4388-baec-2e87135dc908'
-
 // ============================================================================
 // Role Assignment: AI Project → Storage Account
 // ============================================================================

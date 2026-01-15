@@ -48,8 +48,11 @@ param tags object
 // ============================================================================
 
 // Storage account name must be globally unique and alphanumeric only (3-24 chars)
-// Format: st<projectname><env><suffix>
-var storageAccountName = 'st${projectName}${environmentName}${uniqueSuffix}'
+// Format: st<short project><env><suffix>
+// Use first 5 chars of project name to ensure length constraints
+var projectShortName = substring(projectName, 0, min(length(projectName), 5))
+var envShortName = substring(environmentName, 0, 1) // Use first letter (d/p)
+var storageAccountName = 'st${projectShortName}${envShortName}${uniqueSuffix}'
 
 // Container names for different data types
 var pdfsContainerName = 'pdfs'

@@ -54,6 +54,9 @@ coverage.xml
 *.bicepparam.json
 __azurite_*.json
 
+# Bicep generated ARM templates (can be regenerated)
+infra/bicep/**/*.json
+
 # Environment files
 .env
 .env.local

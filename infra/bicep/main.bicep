@@ -33,8 +33,8 @@ param location string = 'eastus'
 
 @description('Project name prefix. Used to ensure globally unique resource names.')
 @minLength(3)
-@maxLength(10)
-param projectName string = 'drivingagent'
+@maxLength(8)
+param projectName string = 'drvagent'
 
 @description('SKU for Azure AI Search service. S1 or higher required for vector search and semantic ranking.')
 @allowed([
@@ -105,20 +105,15 @@ module foundryProject 'modules/foundry-project.bicep' = {
 }
 
 // Deploy AI model deployments (GPT-4o, text-embedding-3-large)
-// These models are deployed within the Azure AI Foundry project
+// These models are deployed within the Azure OpenAI service
 module modelDeployments 'modules/model-deployments.bicep' = {
   scope: resourceGroup
   name: 'deploy-models'
   params: {
-    location: location
-    aiProjectName: foundryProject.outputs.projectName
+    openAIName: foundryProject.outputs.openAIName
     gpt4oCapacity: gpt4oCapacity
     embeddingCapacity: embeddingCapacity
-    tags: tags
   }
-  dependsOn: [
-    foundryProject
-  ]
 }
 
 // Deploy Azure AI Search service
@@ -161,11 +156,6 @@ module roleAssignments 'modules/role-assignments.bicep' = {
     storageAccountName: storage.outputs.storageAccountName
     searchServiceName: aiSearch.outputs.searchServiceName
   }
-  dependsOn: [
-    foundryProject
-    storage
-    aiSearch
-  ]
 }
 
 // ============================================================================

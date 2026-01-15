@@ -15,7 +15,7 @@ using '../main.bicep'
 // Environment Configuration
 param environmentName = 'dev'
 param location = 'eastus'
-param projectName = 'drivingagent'
+param projectName = 'drvagent'
 
 // Azure AI Search Configuration
 // Basic tier is sufficient for development and testing

@@ -24,11 +24,8 @@ targetScope = 'resourceGroup'
 // Parameters
 // ============================================================================
 
-@description('Azure region for model deployments')
-param location string
-
-@description('Name of the Azure AI project (workspace)')
-param aiProjectName string
+@description('Name of the Azure OpenAI service')
+param openAIName string
 
 @description('GPT-4o deployment capacity in thousands of tokens per minute (TPM)')
 @minValue(1)
@@ -39,9 +36,6 @@ param gpt4oCapacity int = 50
 @minValue(1)
 @maxValue(500)
 param embeddingCapacity int = 100
-
-@description('Resource tags')
-param tags object
 
 // ============================================================================
 // Variables
@@ -64,9 +58,9 @@ var deploymentSku = 'Standard'
 // Existing Resources
 // ============================================================================
 
-// Reference to the existing Azure AI project workspace
-resource aiProject 'Microsoft.MachineLearningServices/workspaces@2024-04-01' existing = {
-  name: aiProjectName
+// Reference to the existing Azure OpenAI service
+resource openAI 'Microsoft.CognitiveServices/accounts@2023-05-01' existing = {
+  name: openAIName
 }
 
 // ============================================================================
@@ -87,7 +81,7 @@ resource aiProject 'Microsoft.MachineLearningServices/workspaces@2024-04-01' exi
 // - 100K+ TPM: Recommended for production with multiple concurrent users
 resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
   name: gpt4oDeploymentName
-  parent: aiProject
+  parent: openAI
   sku: {
     name: deploymentSku
     capacity: gpt4oCapacity // Tokens per minute (in thousands)
@@ -121,7 +115,7 @@ resource gpt4oDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-
 // - Can be lower in production if re-indexing is infrequent
 resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = {
   name: embeddingDeploymentName
-  parent: aiProject
+  parent: openAI
   sku: {
     name: deploymentSku
     capacity: embeddingCapacity // Tokens per minute (in thousands)
