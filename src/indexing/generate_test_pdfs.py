@@ -12,7 +12,6 @@ Usage:
 """
 
 import argparse
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -22,9 +21,8 @@ try:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import inch
     from reportlab.platypus import (
-        SimpleDocTemplate, Paragraph, Spacer, Image, PageBreak, Table, TableStyle
+        SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
     )
-    from reportlab.pdfgen import canvas
 except ImportError:
     print("Error: reportlab not installed. Install with: pip install reportlab")
     exit(1)

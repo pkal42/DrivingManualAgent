@@ -6,7 +6,7 @@ actual Azure resources.
 """
 
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 import sys
 import os
 
@@ -139,7 +139,7 @@ class TestPDFGeneration(unittest.TestCase):
             import importlib.util
             spec = importlib.util.spec_from_file_location(
                 "generate_test_pdfs",
-                os.path.join(os.path.dirname(__file__), '..', 'src', 'indexing', 'generate_test_pdfs.py')
+                os.path.join(project_root, 'src', 'indexing', 'generate_test_pdfs.py')
             )
             module = importlib.util.module_from_spec(spec)
             # Don't execute, just check it can be loaded

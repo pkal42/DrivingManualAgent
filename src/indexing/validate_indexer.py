@@ -26,7 +26,7 @@ import logging
 import os
 import sys
 from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Any
 
 from azure.core.credentials import AzureKeyCredential
 from azure.identity import DefaultAzureCredential
@@ -80,7 +80,7 @@ class IndexerValidator:
             credential=credential
         )
     
-    def validate_skillset(self, skillset_name: str) -> Dict[str, any]:
+    def validate_skillset(self, skillset_name: str) -> Dict[str, Any]:
         """
         Validate skillset configuration and execution status.
         
@@ -135,7 +135,7 @@ class IndexerValidator:
             logger.error(f"Error validating skillset: {e}")
             return {'error': str(e)}
     
-    def validate_indexer(self, indexer_name: str) -> Dict[str, any]:
+    def validate_indexer(self, indexer_name: str) -> Dict[str, Any]:
         """
         Validate indexer execution status and errors.
         
@@ -184,7 +184,7 @@ class IndexerValidator:
             logger.error(f"Error validating indexer: {e}")
             return {'error': str(e)}
     
-    def validate_index_content(self) -> Dict[str, any]:
+    def validate_index_content(self) -> Dict[str, Any]:
         """
         Validate index content and field population.
         
@@ -281,7 +281,7 @@ class IndexerValidator:
             for field, count in field_counts.items()
         }
     
-    def _analyze_chunk_stats(self, documents: List[dict]) -> Dict[str, any]:
+    def _analyze_chunk_stats(self, documents: List[dict]) -> Dict[str, Any]:
         """
         Analyze text chunk statistics.
         
@@ -313,7 +313,7 @@ class IndexerValidator:
             'total_chunks': len(chunk_lengths)
         }
     
-    def _analyze_image_stats(self, documents: List[dict]) -> Dict[str, any]:
+    def _analyze_image_stats(self, documents: List[dict]) -> Dict[str, Any]:
         """
         Analyze image extraction statistics.
         
@@ -342,7 +342,7 @@ class IndexerValidator:
             'image_percentage': (chunks_with_images / total * 100) if total > 0 else 0
         }
     
-    def validate_embeddings(self, sample_size: int = 10) -> Dict[str, any]:
+    def validate_embeddings(self, sample_size: int = 10) -> Dict[str, Any]:
         """
         Validate embedding dimensions and quality.
         
@@ -368,9 +368,6 @@ class IndexerValidator:
                 return {'error': 'No documents found'}
             
             # Verify vector search works (indirect embedding validation)
-            # Perform a vector search using the first document's content
-            first_doc = results[0]
-            
             # This would require generating an embedding for the query
             # For now, we just check that documents exist
             validation_results = {
@@ -391,7 +388,7 @@ class IndexerValidator:
         self,
         skillset_name: Optional[str] = None,
         indexer_name: Optional[str] = None
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Run complete validation suite.
         
