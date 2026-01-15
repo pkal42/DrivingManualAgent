@@ -11,3 +11,25 @@ Pillow>=10.0.0                   # Image processing for PDF generation
 
 # Utilities
 python-dotenv>=1.0.0             # Environment variable management
+# Azure AI Project and Agent Framework
+azure-ai-projects>=1.0.0  # Azure AI Foundry project SDK for agent orchestration
+azure-ai-agents>=1.1.0    # Azure AI Agent Framework v2 for building intelligent agents
+
+# Azure Authentication
+azure-identity>=1.12.0    # Azure Active Directory authentication library
+
+# Azure AI Search
+azure-search-documents>=11.4.0  # Azure AI Search SDK for vector and semantic search
+
+# Azure Storage
+azure-storage-blob>=12.19.0     # Azure Blob Storage SDK for document storage
+
+# OpenAI
+openai>=1.0.0            # OpenAI SDK for LLM interactions
+
+# HTTP and Async
+aiohttp>=3.8.0           # Async HTTP client for API calls
+
+# Observability and Monitoring
+opentelemetry-sdk>=1.20.0              # OpenTelemetry SDK for distributed tracing
+azure-monitor-opentelemetry>=1.0.0     # Azure Monitor integration for telemetry
