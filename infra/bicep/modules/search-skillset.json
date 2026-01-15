@@ -1,0 +1,216 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "16240845809959751958"
+    }
+  },
+  "parameters": {
+    "searchServiceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Azure AI Search service where skillset will be created"
+      }
+    },
+    "openAiEndpoint": {
+      "type": "string",
+      "metadata": {
+        "description": "Azure OpenAI endpoint URL for embedding generation"
+      }
+    },
+    "embeddingDeploymentName": {
+      "type": "string",
+      "defaultValue": "text-embedding-3-large",
+      "metadata": {
+        "description": "Name of the text embedding model deployment (text-embedding-3-large)"
+      }
+    },
+    "visionDeploymentName": {
+      "type": "string",
+      "defaultValue": "gpt-4o",
+      "metadata": {
+        "description": "Name of the vision model deployment for image description (gpt-4o)"
+      }
+    },
+    "skillsetName": {
+      "type": "string",
+      "defaultValue": "driving-manual-skillset",
+      "metadata": {
+        "description": "Name for the skillset resource"
+      }
+    },
+    "enableImageDescriptions": {
+      "type": "bool",
+      "defaultValue": true,
+      "metadata": {
+        "description": "Enable image description skill using GPT-4o vision model"
+      }
+    }
+  },
+  "variables": {
+    "baseSkills": [
+      {
+        "@odata.type": "#Microsoft.Skills.Util.DocumentExtractionSkill",
+        "name": "extract-content",
+        "description": "Extract text and images from PDF driving manuals",
+        "context": "/document",
+        "inputs": [
+          {
+            "name": "file_data",
+            "source": "/document/file_data"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "content",
+            "targetName": "extracted_content"
+          },
+          {
+            "name": "normalized_images",
+            "targetName": "normalized_images"
+          }
+        ],
+        "configuration": {
+          "parsingMode": "default",
+          "dataToExtract": "contentAndMetadata",
+          "imageAction": "generateNormalizedImages",
+          "normalizedImageMaxWidth": 2000,
+          "normalizedImageMaxHeight": 2000
+        }
+      },
+      {
+        "@odata.type": "#Microsoft.Skills.Text.V3.SplitSkill",
+        "name": "split-text",
+        "description": "Split extracted text into token-based chunks optimized for embedding generation",
+        "context": "/document",
+        "inputs": [
+          {
+            "name": "text",
+            "source": "/document/extracted_content"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "textItems",
+            "targetName": "pages"
+          }
+        ],
+        "configuration": {
+          "textSplitMode": "pages",
+          "unit": "azureOpenAITokens",
+          "maximumPageLength": 512,
+          "pageOverlapLength": 100,
+          "azureOpenAITokenizerParameters": {
+            "encoderModelName": "cl100k_base"
+          }
+        }
+      },
+      {
+        "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+        "name": "generate-embeddings",
+        "description": "Generate vector embeddings for text chunks using text-embedding-3-large",
+        "context": "/document/pages/*",
+        "inputs": [
+          {
+            "name": "text",
+            "source": "/document/pages/*/text"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "embedding",
+            "targetName": "vector"
+          }
+        ],
+        "configuration": {
+          "resourceUri": "[parameters('openAiEndpoint')]",
+          "deploymentId": "[parameters('embeddingDeploymentName')]"
+        }
+      }
+    ],
+    "imageSkills": [
+      {
+        "@odata.type": "#Microsoft.Skills.Vision.ImageAnalysisSkill",
+        "name": "describe-images",
+        "description": "Generate text descriptions of extracted images using GPT-4o vision",
+        "context": "/document/normalized_images/*",
+        "inputs": [
+          {
+            "name": "image",
+            "source": "/document/normalized_images/*"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "description",
+            "targetName": "description"
+          }
+        ],
+        "configuration": {
+          "resourceUri": "[parameters('openAiEndpoint')]",
+          "deploymentId": "[parameters('visionDeploymentName')]",
+          "prompt": "Describe this image from a driving manual in detail, focusing on road signs, traffic situations, vehicle components, and safety information.",
+          "visualFeatures": [
+            "description"
+          ]
+        }
+      },
+      {
+        "@odata.type": "#Microsoft.Skills.Text.AzureOpenAIEmbeddingSkill",
+        "name": "generate-image-embeddings",
+        "description": "Generate vector embeddings for image descriptions",
+        "context": "/document/normalized_images/*",
+        "inputs": [
+          {
+            "name": "text",
+            "source": "/document/normalized_images/*/description"
+          }
+        ],
+        "outputs": [
+          {
+            "name": "embedding",
+            "targetName": "image_vector"
+          }
+        ],
+        "configuration": {
+          "resourceUri": "[parameters('openAiEndpoint')]",
+          "deploymentId": "[parameters('embeddingDeploymentName')]"
+        }
+      }
+    ],
+    "allSkills": "[if(parameters('enableImageDescriptions'), concat(variables('baseSkills'), variables('imageSkills')), variables('baseSkills'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Search/searchServices/skillsets",
+      "apiVersion": "2024-06-01-preview",
+      "name": "[format('{0}/{1}', parameters('searchServiceName'), parameters('skillsetName'))]",
+      "properties": {
+        "description": "Skillset for extracting and enriching content from PDF driving manuals with text chunking, image extraction, and embedding generation",
+        "skills": "[variables('allSkills')]",
+        "cognitiveServices": {
+          "@odata.type": "#Microsoft.Azure.Search.CognitiveServicesByKey"
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "skillsetId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the created skillset"
+      },
+      "value": "[resourceId('Microsoft.Search/searchServices/skillsets', parameters('searchServiceName'), parameters('skillsetName'))]"
+    },
+    "skillsetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the created skillset"
+      },
+      "value": "[parameters('skillsetName')]"
+    }
+  }
+}

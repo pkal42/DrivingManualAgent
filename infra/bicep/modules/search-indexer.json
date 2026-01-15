@@ -1,0 +1,150 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.39.26.7824",
+      "templateHash": "4945241312755052964"
+    }
+  },
+  "parameters": {
+    "searchServiceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the Azure AI Search service where indexer will be created"
+      }
+    },
+    "dataSourceName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the data source to read from"
+      }
+    },
+    "skillsetName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the skillset to execute"
+      }
+    },
+    "indexName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the target index"
+      }
+    },
+    "indexerName": {
+      "type": "string",
+      "defaultValue": "driving-manual-indexer",
+      "metadata": {
+        "description": "Name for the indexer resource"
+      }
+    },
+    "schedule": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Indexer schedule (cron expression) - empty for on-demand only"
+      }
+    },
+    "enableSchedule": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Enable automatic indexer execution on schedule"
+      }
+    },
+    "batchSize": {
+      "type": "int",
+      "defaultValue": 10,
+      "metadata": {
+        "description": "Maximum number of items to process in a single indexer run (0 = unlimited)"
+      }
+    },
+    "maxFailedItems": {
+      "type": "int",
+      "defaultValue": 0,
+      "metadata": {
+        "description": "Maximum number of parallel threads for indexing"
+      }
+    },
+    "maxFailedItemsPerBatch": {
+      "type": "int",
+      "defaultValue": 0,
+      "metadata": {
+        "description": "Maximum number of failed items before indexer run fails"
+      }
+    }
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Search/searchServices/indexers",
+      "apiVersion": "2024-06-01-preview",
+      "name": "[format('{0}/{1}', parameters('searchServiceName'), parameters('indexerName'))]",
+      "properties": {
+        "description": "Indexer for processing PDF driving manuals with text extraction, chunking, and embedding generation",
+        "dataSourceName": "[parameters('dataSourceName')]",
+        "targetIndexName": "[parameters('indexName')]",
+        "skillsetName": "[parameters('skillsetName')]",
+        "schedule": "[if(and(parameters('enableSchedule'), not(empty(parameters('schedule')))), createObject('interval', parameters('schedule')), null())]",
+        "parameters": {
+          "batchSize": "[parameters('batchSize')]",
+          "maxFailedItems": "[parameters('maxFailedItems')]",
+          "maxFailedItemsPerBatch": "[parameters('maxFailedItemsPerBatch')]",
+          "configuration": {
+            "allowSkillsetToReadFileData": true,
+            "parsingMode": "default",
+            "failOnUnsupportedContentType": false,
+            "failOnUnprocessableDocument": false
+          }
+        },
+        "fieldMappings": [
+          {
+            "sourceFieldName": "metadata_storage_path",
+            "targetFieldName": "document_id",
+            "mappingFunction": {
+              "name": "base64Encode"
+            }
+          },
+          {
+            "sourceFieldName": "metadata_storage_name",
+            "targetFieldName": "metadata_storage_name"
+          }
+        ],
+        "outputFieldMappings": [
+          {
+            "sourceFieldName": "/document/pages/*/text",
+            "targetFieldName": "content"
+          },
+          {
+            "sourceFieldName": "/document/pages/*/vector",
+            "targetFieldName": "chunk_vector"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": {
+    "indexerId": {
+      "type": "string",
+      "metadata": {
+        "description": "Resource ID of the created indexer"
+      },
+      "value": "[resourceId('Microsoft.Search/searchServices/indexers', parameters('searchServiceName'), parameters('indexerName'))]"
+    },
+    "indexerName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the created indexer"
+      },
+      "value": "[parameters('indexerName')]"
+    },
+    "executionMode": {
+      "type": "string",
+      "metadata": {
+        "description": "Indexer execution mode (scheduled or on-demand)"
+      },
+      "value": "[if(parameters('enableSchedule'), 'scheduled', 'on-demand')]"
+    }
+  }
+}
