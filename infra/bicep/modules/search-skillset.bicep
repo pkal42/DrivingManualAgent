@@ -346,10 +346,12 @@ resource skillset 'Microsoft.Search/searchServices/skillsets@2024-06-01-preview'
     
     // Cognitive Services connection
     // Uses managed identity for authentication (no keys required)
+    // When deployed via AI Foundry project, managed identity is configured automatically
+    // The search service's managed identity must have "Cognitive Services User" role
     cognitiveServices: {
-      '@odata.type': '#Microsoft.Azure.Search.CognitiveServicesByKey'
-      // In production, use managed identity via AI Foundry project
-      // This is a placeholder - actual connection configured via portal/API
+      '@odata.type': '#Microsoft.Azure.Search.DefaultCognitiveServices'
+      // Managed identity authentication is configured via AI Foundry project
+      // No additional configuration needed here
     }
   }
 }

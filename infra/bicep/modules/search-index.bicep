@@ -355,9 +355,11 @@ resource searchIndex 'Microsoft.Search/searchServices/indexes@2024-06-01-preview
     // - efConstruction: Size of dynamic candidate list during index build
     //   - Higher = better quality graph but slower indexing
     //   - Range: 100-1000, recommended: 400 for balanced quality
-    // - efSearch: Size of dynamic candidate list during search
-    //   - Higher = better recall but slower queries
-    //   - Range: 100-1000, recommended: 500 for high accuracy
+    //
+    // Note: efSearch is a query-time parameter (not configured in index schema)
+    // - Specified per query to tune recall vs latency
+    // - Higher = better recall but slower queries
+    // - Recommended: 500 for high accuracy (adjust per query needs)
     //
     // Similarity Metric:
     // - cosine: Measures angle between vectors (standard for embeddings)
@@ -394,13 +396,9 @@ resource searchIndex 'Microsoft.Search/searchServices/indexes@2024-06-01-preview
           name: 'default-vector-profile'
           algorithm: 'hnsw-config'
           // No vectorizer needed (embeddings pre-computed in skillset)
+          // efSearch is a query-time parameter, not configured here
         }
       ]
-      
-      // efSearch parameter for query-time tuning
-      // Defined per query, not in index schema
-      // Higher efSearch = better recall but slower queries
-      // Recommended: 500 for high accuracy (can tune per query)
     }
     
     // ========================================================================

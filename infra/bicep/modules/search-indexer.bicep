@@ -35,13 +35,13 @@ param schedule string = ''
 @description('Enable automatic indexer execution on schedule')
 param enableSchedule bool = false
 
-@description('Maximum number of items to process in a single indexer run (0 = unlimited)')
+@description('Number of items to process in a single batch (10-50 recommended for PDFs)')
 param batchSize int = 10
 
-@description('Maximum number of parallel threads for indexing')
+@description('Maximum number of failed items before indexer run fails (0 = fail on first error, -1 = never fail)')
 param maxFailedItems int = 0
 
-@description('Maximum number of failed items before indexer run fails')
+@description('Maximum number of failed items per batch before failing (-1 = never fail batch)')
 param maxFailedItemsPerBatch int = 0
 
 // Resource Reference

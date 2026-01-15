@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.39.26.7824",
-      "templateHash": "16240845809959751958"
+      "templateHash": "5067086603374579022"
     }
   },
   "parameters": {
@@ -192,7 +192,7 @@
         "description": "Skillset for extracting and enriching content from PDF driving manuals with text chunking, image extraction, and embedding generation",
         "skills": "[variables('allSkills')]",
         "cognitiveServices": {
-          "@odata.type": "#Microsoft.Azure.Search.CognitiveServicesByKey"
+          "@odata.type": "#Microsoft.Azure.Search.DefaultCognitiveServices"
         }
       }
     }

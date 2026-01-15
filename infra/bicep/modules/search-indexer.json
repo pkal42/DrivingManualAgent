@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.39.26.7824",
-      "templateHash": "4945241312755052964"
+      "templateHash": "12860164427246187488"
     }
   },
   "parameters": {
@@ -58,21 +58,21 @@
       "type": "int",
       "defaultValue": 10,
       "metadata": {
-        "description": "Maximum number of items to process in a single indexer run (0 = unlimited)"
+        "description": "Number of items to process in a single batch (10-50 recommended for PDFs)"
       }
     },
     "maxFailedItems": {
       "type": "int",
       "defaultValue": 0,
       "metadata": {
-        "description": "Maximum number of parallel threads for indexing"
+        "description": "Maximum number of failed items before indexer run fails (0 = fail on first error, -1 = never fail)"
       }
     },
     "maxFailedItemsPerBatch": {
       "type": "int",
       "defaultValue": 0,
       "metadata": {
-        "description": "Maximum number of failed items before indexer run fails"
+        "description": "Maximum number of failed items per batch before failing (-1 = never fail batch)"
       }
     }
   },

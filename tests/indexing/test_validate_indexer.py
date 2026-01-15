@@ -10,8 +10,12 @@ from unittest.mock import MagicMock, patch
 import sys
 import os
 
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+# Add parent directories to path for imports
+# This is acceptable in test files to allow importing from src
+project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+src_path = os.path.join(project_root, 'src')
+if src_path not in sys.path:
+    sys.path.insert(0, src_path)
 
 
 class TestIndexerValidator(unittest.TestCase):

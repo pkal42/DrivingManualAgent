@@ -274,7 +274,12 @@ def main():
     print("-" * 60)
     print(f"Generated 2 sample PDFs in: {output_dir}")
     print("\nYou can now upload these PDFs to Azure Blob Storage:")
-    print(f"  az storage blob upload-batch -d pdfs -s {output_dir} --account-name <storage-account>")
+    print(f"  az storage blob upload-batch \\")
+    print(f"    -d pdfs \\")
+    print(f"    -s {output_dir} \\")
+    print(f"    --account-name YOUR-STORAGE-ACCOUNT-NAME \\")
+    print(f"    --auth-mode login")
+    print("\nReplace YOUR-STORAGE-ACCOUNT-NAME with your actual storage account name")
 
 
 if __name__ == '__main__':
