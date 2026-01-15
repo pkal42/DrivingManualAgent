@@ -1,0 +1,667 @@
+name: Ingest Documents
+
+# ============================================================================
+# Workflow Triggers
+# ============================================================================
+# This workflow automates the document ingestion pipeline:
+# 1. Manual trigger with document path inputs
+# 2. Automatic trigger when PDFs are pushed to data/manuals/
+#
+# The workflow orchestrates:
+# - PDF validation (size, format, naming)
+# - Upload to blob storage with metadata
+# - Indexer triggering and monitoring
+# - Enrichment validation
+# - Result reporting
+on:
+  # Manual trigger with custom inputs
+  workflow_dispatch:
+    inputs:
+      state:
+        description: 'US State name (e.g., California, Texas)'
+        required: false
+        type: string
+      document_paths:
+        description: 'Comma-separated paths to PDFs (e.g., data/manuals/ca.pdf,data/manuals/tx.pdf)'
+        required: false
+        type: string
+        default: 'data/manuals'
+      skip_validation:
+        description: 'Skip pre-upload validation checks'
+        required: false
+        type: boolean
+        default: false
+      reset_indexer:
+        description: 'Reset indexer before running (reprocess all documents)'
+        required: false
+        type: boolean
+        default: false
+  
+  # Automatic trigger on PDF uploads to data/manuals/
+  push:
+    branches:
+      - main
+    paths:
+      - 'data/manuals/**/*.pdf'
+
+# ============================================================================
+# Workflow Permissions
+# ============================================================================
+# Required for Azure authentication and PR comments
+permissions:
+  id-token: write      # Required for OIDC authentication with Azure
+  contents: read       # Required to checkout code
+  pull-requests: write # Required to post validation comments
+  issues: write        # Required to create issues for failures
+
+# ============================================================================
+# Environment Variables
+# ============================================================================
+# Global configuration used across all jobs
+env:
+  PYTHON_VERSION: '3.12'
+  INDEXER_TIMEOUT: '1800'  # 30 minutes
+  POLL_INTERVAL: '10'      # 10 seconds
+
+jobs:
+  # ==========================================================================
+  # Job 1: Validate PDF Files
+  # ==========================================================================
+  # Checks PDF files for:
+  # - Valid PDF format
+  # - Reasonable file size (not too small/large)
+  # - Proper naming conventions
+  # - No corruption
+  validate-pdfs:
+    name: Validate PDF Files
+    runs-on: ubuntu-latest
+    # Skip validation if explicitly disabled
+    if: ${{ !inputs.skip_validation }}
+    
+    outputs:
+      # Output list of validated PDFs for next job
+      pdf_files: ${{ steps.find-pdfs.outputs.files }}
+      pdf_count: ${{ steps.find-pdfs.outputs.count }}
+    
+    steps:
+      # Checkout repository to access PDF files
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Find PDF files to process
+      # If document_paths is provided, use that; otherwise scan data/manuals/
+      - name: Find PDF Files
+        id: find-pdfs
+        run: |
+          echo "Finding PDF files to process..."
+          
+          # Determine which paths to scan
+          if [ -n "${{ inputs.document_paths }}" ]; then
+            # Manual trigger: use provided paths
+            PATHS="${{ inputs.document_paths }}"
+            echo "Using provided paths: $PATHS"
+          else
+            # Automatic trigger: scan data/manuals/
+            PATHS="data/manuals"
+            echo "Scanning default path: $PATHS"
+          fi
+          
+          # Find all PDF files
+          PDF_FILES=""
+          PDF_COUNT=0
+          
+          # Split paths by comma and process each
+          IFS=',' read -ra PATH_ARRAY <<< "$PATHS"
+          for path in "${PATH_ARRAY[@]}"; do
+            path=$(echo "$path" | xargs)  # Trim whitespace
+            
+            if [ -f "$path" ]; then
+              # Single file
+              if [[ "$path" == *.pdf ]]; then
+                PDF_FILES="$PDF_FILES $path"
+                PDF_COUNT=$((PDF_COUNT + 1))
+              fi
+            elif [ -d "$path" ]; then
+              # Directory - find all PDFs recursively
+              while IFS= read -r file; do
+                PDF_FILES="$PDF_FILES $file"
+                PDF_COUNT=$((PDF_COUNT + 1))
+              done < <(find "$path" -type f -name "*.pdf")
+            fi
+          done
+          
+          # Output results
+          echo "files=$PDF_FILES" >> $GITHUB_OUTPUT
+          echo "count=$PDF_COUNT" >> $GITHUB_OUTPUT
+          
+          echo "Found $PDF_COUNT PDF file(s):"
+          for file in $PDF_FILES; do
+            echo "  - $file"
+          done
+      
+      # Install PDF validation tools
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils file
+      
+      # Validate each PDF file
+      # Checks: format, size, corruption
+      - name: Validate PDF Files
+        id: validate
+        run: |
+          echo "Validating PDF files..."
+          
+          PDF_FILES="${{ steps.find-pdfs.outputs.files }}"
+          VALIDATION_ERRORS=""
+          
+          for pdf in $PDF_FILES; do
+            echo "Validating: $pdf"
+            
+            # Check file exists
+            if [ ! -f "$pdf" ]; then
+              VALIDATION_ERRORS="${VALIDATION_ERRORS}\n- File not found: $pdf"
+              continue
+            fi
+            
+            # Check file type (must be PDF)
+            FILE_TYPE=$(file -b --mime-type "$pdf")
+            if [ "$FILE_TYPE" != "application/pdf" ]; then
+              VALIDATION_ERRORS="${VALIDATION_ERRORS}\n- Invalid file type: $pdf (got $FILE_TYPE)"
+              continue
+            fi
+            
+            # Check file size (min 1KB, max 100MB)
+            FILE_SIZE=$(stat -c%s "$pdf")
+            if [ $FILE_SIZE -lt 1024 ]; then
+              VALIDATION_ERRORS="${VALIDATION_ERRORS}\n- File too small: $pdf ($FILE_SIZE bytes)"
+              continue
+            fi
+            if [ $FILE_SIZE -gt 104857600 ]; then
+              VALIDATION_ERRORS="${VALIDATION_ERRORS}\n- File too large: $pdf ($FILE_SIZE bytes, max 100MB)"
+              continue
+            fi
+            
+            # Check PDF structure (not corrupted)
+            if ! pdfinfo "$pdf" > /dev/null 2>&1; then
+              VALIDATION_ERRORS="${VALIDATION_ERRORS}\n- PDF appears corrupted: $pdf"
+              continue
+            fi
+            
+            # Get page count
+            PAGE_COUNT=$(pdfinfo "$pdf" | grep "Pages:" | awk '{print $2}')
+            SIZE_MB=$(echo "scale=2; $FILE_SIZE / 1048576" | bc)
+            
+            echo "  ✓ Valid: $pdf ($PAGE_COUNT pages, ${SIZE_MB}MB)"
+          done
+          
+          # Check for validation errors
+          if [ -n "$VALIDATION_ERRORS" ]; then
+            echo "Validation errors found:"
+            echo -e "$VALIDATION_ERRORS"
+            exit 1
+          fi
+          
+          echo "✓ All PDF files are valid"
+  
+  # ==========================================================================
+  # Job 2: Upload Documents to Blob Storage
+  # ==========================================================================
+  # Uploads validated PDFs to Azure Blob Storage with metadata
+  upload:
+    name: Upload Documents
+    runs-on: ubuntu-latest
+    needs: [validate-pdfs]
+    # Skip if validation found no PDFs
+    if: ${{ needs.validate-pdfs.outputs.pdf_count > 0 || inputs.skip_validation }}
+    # Use development environment for Azure authentication
+    environment: development
+    
+    outputs:
+      upload_success: ${{ steps.upload.outputs.success }}
+      upload_count: ${{ steps.upload.outputs.count }}
+    
+    steps:
+      # Checkout code to access scripts and PDFs
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Setup Python for running upload script
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      # Install Python dependencies
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      # Authenticate with Azure using OIDC
+      # This provides managed identity credentials to Python scripts
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      # Upload PDFs to blob storage
+      # Uses upload_documents.py script with metadata extraction
+      - name: Upload PDFs to Blob Storage
+        id: upload
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
+          USE_MANAGED_IDENTITY: 'true'
+        run: |
+          echo "Uploading PDFs to blob storage..."
+          
+          # Determine which PDFs to upload
+          if [ -n "${{ inputs.document_paths }}" ]; then
+            PATHS="${{ inputs.document_paths }}"
+          else
+            PATHS="data/manuals"
+          fi
+          
+          # Run upload script
+          # - Preserves directory structure
+          # - Adds metadata from path/filename
+          # - Shows progress for batch uploads
+          python src/indexing/upload_documents.py \
+            --directory "$PATHS" \
+            --recursive \
+            --overwrite \
+            --verbose
+          
+          # Capture result (script exits with 0 on success)
+          if [ $? -eq 0 ]; then
+            echo "success=true" >> $GITHUB_OUTPUT
+            echo "count=${{ needs.validate-pdfs.outputs.pdf_count }}" >> $GITHUB_OUTPUT
+            echo "✓ Upload completed successfully"
+          else
+            echo "success=false" >> $GITHUB_OUTPUT
+            echo "✗ Upload failed"
+            exit 1
+          fi
+  
+  # ==========================================================================
+  # Job 3: Trigger Indexer Run
+  # ==========================================================================
+  # Triggers Azure AI Search indexer to process uploaded documents
+  trigger-indexer:
+    name: Trigger Indexer
+    runs-on: ubuntu-latest
+    needs: [upload]
+    if: ${{ needs.upload.outputs.upload_success == 'true' }}
+    environment: development
+    
+    outputs:
+      indexer_triggered: ${{ steps.trigger.outputs.triggered }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      # Reset indexer if requested
+      # This clears change tracking and reprocesses all documents
+      - name: Reset Indexer (Optional)
+        if: ${{ inputs.reset_indexer == true }}
+        env:
+          AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
+          USE_MANAGED_IDENTITY: 'true'
+        run: |
+          echo "Resetting indexer..."
+          python src/indexing/trigger_indexer.py --reset --verbose
+      
+      # Trigger indexer run
+      # Note: This job only triggers; monitoring happens in next job
+      - name: Trigger Indexer Run
+        id: trigger
+        env:
+          AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
+          USE_MANAGED_IDENTITY: 'true'
+        run: |
+          echo "Triggering indexer run..."
+          
+          python src/indexing/trigger_indexer.py --verbose
+          
+          if [ $? -eq 0 ]; then
+            echo "triggered=true" >> $GITHUB_OUTPUT
+            echo "✓ Indexer triggered successfully"
+          else
+            echo "triggered=false" >> $GITHUB_OUTPUT
+            echo "✗ Failed to trigger indexer"
+            exit 1
+          fi
+  
+  # ==========================================================================
+  # Job 4: Monitor Indexer Execution
+  # ==========================================================================
+  # Monitors indexer until completion or timeout
+  # Provides real-time status updates
+  monitor:
+    name: Monitor Indexer
+    runs-on: ubuntu-latest
+    needs: [trigger-indexer]
+    if: ${{ needs.trigger-indexer.outputs.indexer_triggered == 'true' }}
+    environment: development
+    
+    outputs:
+      indexer_success: ${{ steps.monitor.outputs.success }}
+      items_processed: ${{ steps.monitor.outputs.items_processed }}
+      items_failed: ${{ steps.monitor.outputs.items_failed }}
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      # Monitor indexer execution
+      # Polls status every 10 seconds until completion or timeout (30 min)
+      - name: Monitor Indexer Execution
+        id: monitor
+        env:
+          AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
+          INDEXER_TIMEOUT: ${{ env.INDEXER_TIMEOUT }}
+          INDEXER_POLL_INTERVAL: ${{ env.POLL_INTERVAL }}
+          USE_MANAGED_IDENTITY: 'true'
+        run: |
+          echo "Monitoring indexer execution..."
+          echo "Timeout: ${INDEXER_TIMEOUT}s, Poll interval: ${INDEXER_POLL_INTERVAL}s"
+          
+          # Run trigger script in wait mode
+          # This will poll status and display progress
+          python src/indexing/trigger_indexer.py \
+            --status-only \
+            --verbose 2>&1 | tee indexer-log.txt
+          
+          # The script was run in status-only mode above
+          # Now we need to actually wait for completion
+          # We'll use a simple loop here
+          START_TIME=$(date +%s)
+          
+          while true; do
+            # Check timeout
+            CURRENT_TIME=$(date +%s)
+            ELAPSED=$((CURRENT_TIME - START_TIME))
+            
+            if [ $ELAPSED -gt $INDEXER_TIMEOUT ]; then
+              echo "✗ Timeout waiting for indexer"
+              echo "success=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            
+            # Get status
+            STATUS_OUTPUT=$(python src/indexing/trigger_indexer.py --status-only 2>&1)
+            
+            # Check if indexer completed
+            if echo "$STATUS_OUTPUT" | grep -q "success"; then
+              echo "✓ Indexer completed successfully"
+              echo "success=true" >> $GITHUB_OUTPUT
+              
+              # Extract statistics
+              ITEMS_PROCESSED=$(echo "$STATUS_OUTPUT" | grep "Items processed:" | awk '{print $3}' || echo "0")
+              ITEMS_FAILED=$(echo "$STATUS_OUTPUT" | grep "Items failed:" | awk '{print $3}' || echo "0")
+              
+              echo "items_processed=$ITEMS_PROCESSED" >> $GITHUB_OUTPUT
+              echo "items_failed=$ITEMS_FAILED" >> $GITHUB_OUTPUT
+              
+              break
+            elif echo "$STATUS_OUTPUT" | grep -q "persistentFailure"; then
+              echo "✗ Indexer failed with errors"
+              echo "success=false" >> $GITHUB_OUTPUT
+              exit 1
+            fi
+            
+            # Still running, wait and retry
+            echo "Indexer still running... (${ELAPSED}s elapsed)"
+            sleep $INDEXER_POLL_INTERVAL
+          done
+  
+  # ==========================================================================
+  # Job 5: Validate Enrichment Results
+  # ==========================================================================
+  # Validates that indexing and enrichment completed successfully
+  # Checks document completeness, chunks, images, embeddings
+  validate:
+    name: Validate Enrichment
+    runs-on: ubuntu-latest
+    needs: [monitor]
+    if: ${{ needs.monitor.outputs.indexer_success == 'true' }}
+    environment: development
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install Dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      # Run validation script
+      # Generates JSON and Markdown reports
+      - name: Validate Enrichment Results
+        id: validate
+        env:
+          AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          USE_MANAGED_IDENTITY: 'true'
+        run: |
+          echo "Validating enrichment results..."
+          
+          # Run validation with report generation
+          python src/indexing/validate_enrichment.py \
+            --json-output validation-report.json \
+            --markdown-output validation-report.md \
+            --verbose
+          
+          VALIDATION_EXIT_CODE=$?
+          
+          # Upload validation reports as artifacts
+          echo "Validation exit code: $VALIDATION_EXIT_CODE"
+      
+      # Upload validation reports as workflow artifacts
+      # Available for download from Actions UI
+      - name: Upload Validation Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-reports
+          path: |
+            validation-report.json
+            validation-report.md
+          retention-days: 30
+      
+      # Post validation results as PR comment (if running from PR)
+      # Provides inline feedback without leaving GitHub
+      - name: Post Validation Results to PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            // Read markdown report
+            let comment = '## 📊 Document Ingestion Validation Results\n\n';
+            
+            try {
+              const report = fs.readFileSync('validation-report.md', 'utf8');
+              comment += report;
+            } catch (error) {
+              comment += '⚠️ Validation report not found\n';
+            }
+            
+            // Add workflow run link
+            comment += `\n\n---\n[View full workflow run](${context.payload.repository.html_url}/actions/runs/${context.runId})`;
+            
+            // Post comment
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+  
+  # ==========================================================================
+  # Job 6: Notify on Failure
+  # ==========================================================================
+  # Creates GitHub issue if ingestion pipeline fails
+  # Provides visibility and tracking for failures
+  notify-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [validate-pdfs, upload, trigger-indexer, monitor, validate]
+    if: ${{ failure() }}
+    
+    steps:
+      # Create issue for failed ingestion
+      # Issue includes failure details and workflow link
+      - name: Create Failure Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '🔴 Document Ingestion Failed';
+            const body = `
+            ## Document Ingestion Pipeline Failure
+            
+            **Workflow Run:** [#${context.runId}](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            **Triggered By:** @${context.actor}
+            **Branch:** ${context.ref}
+            **Commit:** ${context.sha.substring(0, 7)}
+            
+            ### Failure Details
+            
+            The document ingestion pipeline failed during execution. Please review the workflow logs for details.
+            
+            ### Next Steps
+            
+            1. Review the [workflow run logs](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            2. Check for:
+               - PDF validation errors
+               - Azure authentication issues
+               - Indexer execution errors
+               - Enrichment validation failures
+            3. Fix the underlying issue
+            4. Re-run the workflow or push new changes
+            
+            ### Debugging Commands
+            
+            \`\`\`bash
+            # Check indexer status
+            python src/indexing/trigger_indexer.py --status-only --verbose
+            
+            # Monitor skillset errors
+            python src/indexing/monitor_skillset.py --show-errors
+            
+            # Validate enrichment
+            python src/indexing/validate_enrichment.py --verbose
+            \`\`\`
+            
+            ---
+            *This issue was automatically created by the document ingestion workflow.*
+            `;
+            
+            // Check if similar issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'automation,ingestion,ci-failure'
+            });
+            
+            // Only create new issue if no recent failure issue exists
+            if (issues.data.length === 0) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title: title,
+                body: body,
+                labels: ['automation', 'ingestion', 'ci-failure']
+              });
+            }
+  
+  # ==========================================================================
+  # Job 7: Summary
+  # ==========================================================================
+  # Provides workflow summary with key metrics
+  summary:
+    name: Workflow Summary
+    runs-on: ubuntu-latest
+    needs: [validate-pdfs, upload, monitor, validate]
+    if: always()
+    
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "# 📄 Document Ingestion Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Workflow Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Stage | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| PDF Validation | ${{ needs.validate-pdfs.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Document Upload | ${{ needs.upload.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Indexer Execution | ${{ needs.monitor.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Enrichment Validation | ${{ needs.validate.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Add statistics if available
+          if [ "${{ needs.validate-pdfs.outputs.pdf_count }}" != "" ]; then
+            echo "## Statistics" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **PDFs Processed:** ${{ needs.validate-pdfs.outputs.pdf_count }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Items Indexed:** ${{ needs.monitor.outputs.items_processed }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Items Failed:** ${{ needs.monitor.outputs.items_failed }}" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "*Workflow completed at $(date -u +"%Y-%m-%d %H:%M:%S UTC")*" >> $GITHUB_STEP_SUMMARY
