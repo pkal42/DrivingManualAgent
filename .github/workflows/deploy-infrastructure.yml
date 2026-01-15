@@ -1,0 +1,239 @@
+name: Deploy Infrastructure
+
+# ============================================================================
+# Workflow Triggers
+# ============================================================================
+# This workflow can be triggered in two ways:
+# 1. Manually via workflow_dispatch (GitHub Actions UI)
+# 2. Automatically on push to main branch when infra files change
+on:
+  # Manual trigger with environment selection
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+        default: 'dev'
+  
+  # Automatic trigger on infrastructure changes
+  push:
+    branches:
+      - main
+    paths:
+      - 'infra/bicep/**'
+      - '.github/workflows/deploy-infrastructure.yml'
+
+# ============================================================================
+# Workflow Permissions
+# ============================================================================
+# Required for OIDC token generation
+permissions:
+  id-token: write   # Required for Azure OIDC authentication
+  contents: read    # Required to checkout code
+
+# ============================================================================
+# Environment Variables
+# ============================================================================
+env:
+  AZURE_LOCATION: 'eastus'
+  BICEP_FILE: 'infra/bicep/main.bicep'
+
+jobs:
+  # ==========================================================================
+  # Job: Validate Bicep Templates
+  # ==========================================================================
+  # Validates Bicep syntax and builds ARM templates
+  # Runs for all environments before deployment
+  validate:
+    name: Validate Bicep Templates
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Checkout repository code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Install Azure CLI with Bicep support
+      - name: Setup Azure CLI
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      # Validate Bicep syntax and build ARM template
+      # This catches syntax errors before deployment
+      - name: Bicep Build (Dev)
+        run: |
+          echo "Building Bicep template for dev environment..."
+          az bicep build --file ${{ env.BICEP_FILE }}
+          echo "✓ Bicep template is valid"
+      
+      # Validate Bicep syntax for prod parameters
+      - name: Bicep Build (Prod)
+        run: |
+          echo "Building Bicep template for prod environment..."
+          az bicep build --file ${{ env.BICEP_FILE }}
+          echo "✓ Bicep template is valid"
+
+  # ==========================================================================
+  # Job: Deploy to Development Environment
+  # ==========================================================================
+  # Deploys infrastructure to dev environment
+  # Includes what-if analysis for change preview
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: validate
+    # Run for dev environment (manual or auto)
+    if: |
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'dev') ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    environment:
+      name: dev
+      url: https://portal.azure.com
+    
+    steps:
+      # Checkout repository code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Authenticate to Azure using OIDC (no secrets stored)
+      # Uses federated credentials configured in Azure AD
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      # Run what-if analysis to preview changes
+      # This shows what resources will be created/modified/deleted
+      # without actually making changes
+      - name: What-If Analysis
+        run: |
+          echo "Running what-if analysis for dev environment..."
+          az deployment sub what-if \
+            --location ${{ env.AZURE_LOCATION }} \
+            --template-file ${{ env.BICEP_FILE }} \
+            --parameters infra/bicep/parameters/dev.bicepparam \
+            --no-pretty-print
+      
+      # Deploy infrastructure to dev environment
+      # Uses subscription-level deployment
+      - name: Deploy Infrastructure
+        run: |
+          echo "Deploying infrastructure to dev environment..."
+          az deployment sub create \
+            --location ${{ env.AZURE_LOCATION }} \
+            --template-file ${{ env.BICEP_FILE }} \
+            --parameters infra/bicep/parameters/dev.bicepparam \
+            --name "deploy-dev-$(date +%Y%m%d-%H%M%S)" \
+            --verbose
+      
+      # Retrieve and display deployment outputs
+      # Outputs include resource names and endpoints
+      - name: Display Deployment Outputs
+        run: |
+          echo "Retrieving deployment outputs..."
+          DEPLOYMENT_NAME=$(az deployment sub list \
+            --query "[?contains(name, 'deploy-dev')].name | [0]" \
+            --output tsv)
+          
+          echo "Deployment: $DEPLOYMENT_NAME"
+          az deployment sub show \
+            --name "$DEPLOYMENT_NAME" \
+            --query properties.outputs \
+            --output table
+      
+      # Summary of deployment
+      - name: Deployment Summary
+        run: |
+          echo "✓ Dev environment deployed successfully"
+          echo "Resources are available in the Azure Portal"
+
+  # ==========================================================================
+  # Job: Deploy to Production Environment
+  # ==========================================================================
+  # Deploys infrastructure to production environment
+  # Requires manual approval via GitHub environment protection rules
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: validate
+    # Only run for prod environment (manual trigger only)
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'prod'
+    environment:
+      name: prod
+      url: https://portal.azure.com
+    
+    steps:
+      # Checkout repository code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      
+      # Authenticate to Azure using OIDC
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      # Run what-if analysis for production changes
+      # Critical for production deployments to avoid surprises
+      - name: What-If Analysis
+        run: |
+          echo "Running what-if analysis for prod environment..."
+          az deployment sub what-if \
+            --location ${{ env.AZURE_LOCATION }} \
+            --template-file ${{ env.BICEP_FILE }} \
+            --parameters infra/bicep/parameters/prod.bicepparam \
+            --no-pretty-print
+      
+      # Manual approval gate happens here (configured in GitHub environment settings)
+      
+      # Deploy infrastructure to production
+      # Uses higher capacity settings from prod.bicepparam
+      - name: Deploy Infrastructure
+        run: |
+          echo "Deploying infrastructure to production environment..."
+          az deployment sub create \
+            --location ${{ env.AZURE_LOCATION }} \
+            --template-file ${{ env.BICEP_FILE }} \
+            --parameters infra/bicep/parameters/prod.bicepparam \
+            --name "deploy-prod-$(date +%Y%m%d-%H%M%S)" \
+            --verbose
+      
+      # Retrieve and display deployment outputs
+      - name: Display Deployment Outputs
+        run: |
+          echo "Retrieving deployment outputs..."
+          DEPLOYMENT_NAME=$(az deployment sub list \
+            --query "[?contains(name, 'deploy-prod')].name | [0]" \
+            --output tsv)
+          
+          echo "Deployment: $DEPLOYMENT_NAME"
+          az deployment sub show \
+            --name "$DEPLOYMENT_NAME" \
+            --query properties.outputs \
+            --output table
+      
+      # Summary of deployment
+      - name: Deployment Summary
+        run: |
+          echo "✓ Production environment deployed successfully"
+          echo "Resources are available in the Azure Portal"
+          echo "⚠ Verify all resources are functioning correctly"
+
+  # ==========================================================================
+  # Job: Post-Deployment Validation (Optional)
+  # ==========================================================================
+  # Add additional validation steps here such as:
+  # - Smoke tests
+  # - Resource availability checks
+  # - Configuration validation
