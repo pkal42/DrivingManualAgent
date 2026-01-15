@@ -1,3 +1,4 @@
+"""Test package for DrivingManualAgent."""
 # Tests
 
 This directory contains unit and integration tests for the DrivingManualAgent project.

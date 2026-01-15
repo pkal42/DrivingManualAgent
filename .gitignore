@@ -21,6 +21,13 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
 *.manifest
 *.spec
 pip-log.txt
@@ -49,6 +56,20 @@ coverage.xml
 *~
 .DS_Store
 
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Azure
+.azure/
 # Azure
 .azure/
 *.bicepparam.json
@@ -64,6 +85,12 @@ infra/bicep/**/*.json
 
 # Logs
 *.log
+
+# Build artifacts
+*.bicep.build
+
+# Generated test files
+data/manuals/*.pdf
 
 # Temporary files
 tmp/
