@@ -32,6 +32,7 @@ targetScope = 'resourceGroup'
 param location string
 
 @description('Project name prefix for resource naming')
+@minLength(3)
 param projectName string
 
 @description('Environment name (dev, prod)')

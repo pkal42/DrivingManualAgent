@@ -75,7 +75,6 @@ resource aiFoundry 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
     disableLocalAuth: true // Enforce Azure AD based access; no shared keys
     publicNetworkAccess: 'Enabled' // Keep public endpoint (Private Link handled elsewhere)
     restrictOutboundNetworkAccess: false // Outbound egress governed by downstream network policy
-    storedCompletionsDisabled: false // Allow persisted logs for analytics (can be toggled later)
     dynamicThrottlingEnabled: true // Helps smooth bursty workloads in dev environments
   }
   tags: tags
