@@ -22,7 +22,6 @@ import logging
 from typing import Optional, Dict, Any
 
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import Agent
 
 from .client import get_project_client
 from .config_loader import AgentConfig, load_agent_config
@@ -70,7 +69,7 @@ def create_driving_rules_agent(
     temperature: Optional[float] = None,
     top_p: Optional[float] = None,
     name: str = "DrivingRulesAgent"
-) -> Agent:
+) -> Any:
     """
     Create a driving rules expert agent with Azure AI Search tool.
     
@@ -182,7 +181,7 @@ def create_agent_with_custom_instructions(
     client: Optional[AIProjectClient] = None,
     config: Optional[AgentConfig] = None,
     name: str = "CustomAgent"
-) -> Agent:
+) -> Any:
     """
     Create an agent with custom instructions.
     

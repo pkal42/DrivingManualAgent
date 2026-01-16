@@ -28,7 +28,6 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import ThreadMessage, MessageRole
 
 from .client import get_project_client
 from .config_loader import AgentConfig
