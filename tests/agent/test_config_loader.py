@@ -8,10 +8,8 @@ and backward compatibility with existing agent code.
 import unittest
 import os
 import sys
-import json
-import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 # Add project root to path for imports
 project_root = Path(__file__).parent.parent.parent
