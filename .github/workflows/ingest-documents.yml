@@ -392,7 +392,7 @@ jobs:
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       
       # Monitor indexer execution
-      # Polls status every 10 seconds until completion or timeout (30 min)
+      # Uses built-in --wait functionality to poll status until completion or timeout
       - name: Monitor Indexer Execution
         id: monitor
         env:
@@ -404,54 +404,41 @@ jobs:
           echo "Monitoring indexer execution..."
           echo "Timeout: ${INDEXER_TIMEOUT}s, Poll interval: ${INDEXER_POLL_INTERVAL}s"
           
-          # Run trigger script in wait mode
-          # This will poll status and display progress
+          # Use the trigger script's built-in wait functionality
+          # This will internally poll status, apply timeout, and display progress
           python src/indexing/trigger_indexer.py \
-            --status-only \
+            --wait \
+            --timeout "${INDEXER_TIMEOUT}" \
+            --poll-interval "${INDEXER_POLL_INTERVAL}" \
             --verbose 2>&1 | tee indexer-log.txt
           
-          # The script was run in status-only mode above
-          # Now we need to actually wait for completion
-          # We'll use a simple loop here
-          START_TIME=$(date +%s)
+          # After the wait completes, inspect the aggregated log output
+          STATUS_OUTPUT=$(cat indexer-log.txt)
           
-          while true; do
-            # Check timeout
-            CURRENT_TIME=$(date +%s)
-            ELAPSED=$((CURRENT_TIME - START_TIME))
+          # Check for failure signal first (more specific pattern)
+          if echo "$STATUS_OUTPUT" | grep -q "persistentFailure"; then
+            echo "✗ Indexer failed with errors"
+            echo "success=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          
+          # Then check for success signal (more specific pattern)
+          if echo "$STATUS_OUTPUT" | grep -q "✓.*completed successfully"; then
+            echo "✓ Indexer completed successfully"
+            echo "success=true" >> "$GITHUB_OUTPUT"
             
-            if [ $ELAPSED -gt $INDEXER_TIMEOUT ]; then
-              echo "✗ Timeout waiting for indexer"
-              echo "success=false" >> $GITHUB_OUTPUT
-              exit 1
-            fi
+            # Extract statistics from the final log
+            ITEMS_PROCESSED=$(echo "$STATUS_OUTPUT" | grep "Items processed:" | awk '{print $3}' || echo "0")
+            ITEMS_FAILED=$(echo "$STATUS_OUTPUT" | grep "Items failed:" | awk '{print $3}' || echo "0")
             
-            # Get status
-            STATUS_OUTPUT=$(python src/indexing/trigger_indexer.py --status-only 2>&1)
-            
-            # Check if indexer completed
-            if echo "$STATUS_OUTPUT" | grep -q "success"; then
-              echo "✓ Indexer completed successfully"
-              echo "success=true" >> $GITHUB_OUTPUT
-              
-              # Extract statistics
-              ITEMS_PROCESSED=$(echo "$STATUS_OUTPUT" | grep "Items processed:" | awk '{print $3}' || echo "0")
-              ITEMS_FAILED=$(echo "$STATUS_OUTPUT" | grep "Items failed:" | awk '{print $3}' || echo "0")
-              
-              echo "items_processed=$ITEMS_PROCESSED" >> $GITHUB_OUTPUT
-              echo "items_failed=$ITEMS_FAILED" >> $GITHUB_OUTPUT
-              
-              break
-            elif echo "$STATUS_OUTPUT" | grep -q "persistentFailure"; then
-              echo "✗ Indexer failed with errors"
-              echo "success=false" >> $GITHUB_OUTPUT
-              exit 1
-            fi
-            
-            # Still running, wait and retry
-            echo "Indexer still running... (${ELAPSED}s elapsed)"
-            sleep $INDEXER_POLL_INTERVAL
-          done
+            echo "items_processed=$ITEMS_PROCESSED" >> "$GITHUB_OUTPUT"
+            echo "items_failed=$ITEMS_FAILED" >> "$GITHUB_OUTPUT"
+          else
+            # If no clear success/failure marker is found, treat as failure
+            echo "✗ Indexer did not report a clear completion status"
+            echo "success=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
   
   # ==========================================================================
   # Job 5: Validate Enrichment Results

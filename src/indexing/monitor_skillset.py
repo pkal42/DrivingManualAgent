@@ -44,9 +44,9 @@ import json
 import logging
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 
 from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import AzureError, ResourceNotFoundError

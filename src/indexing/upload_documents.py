@@ -43,7 +43,6 @@ Requirements:
 
 import argparse
 import logging
-import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,7 +50,7 @@ from typing import Dict, List, Optional, Tuple
 
 from azure.core.exceptions import ResourceExistsError, AzureError
 from azure.identity import DefaultAzureCredential
-from azure.storage.blob import BlobServiceClient, BlobClient, ContentSettings
+from azure.storage.blob import BlobServiceClient, ContentSettings
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))

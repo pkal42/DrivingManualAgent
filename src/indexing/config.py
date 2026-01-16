@@ -117,8 +117,9 @@ class IndexingConfig:
             )
         
         # Validate container names (alphanumeric, hyphens, lowercase only)
+        # Pattern allows 3-63 character names with no consecutive hyphens
         import re
-        container_pattern = r'^[a-z0-9](?!.*--)[a-z0-9-]{1,61}[a-z0-9]$'
+        container_pattern = r'^(?!.*--)[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$'
         
         for container_name, container_value in [
             ('pdfs', self.storage_container_pdfs),

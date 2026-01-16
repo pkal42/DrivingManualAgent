@@ -43,9 +43,8 @@ import argparse
 import logging
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any
 
 from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import AzureError, ResourceNotFoundError
