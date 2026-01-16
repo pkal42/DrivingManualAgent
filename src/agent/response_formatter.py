@@ -122,22 +122,31 @@ def extract_citations(text: str) -> List[Citation]:
         5
     """
     citations = []
+    seen_positions = set()  # Track matched positions to avoid duplicates
     
-    # Citation patterns to match
-    # Pattern 1: (Source: Document Name, Page 123)
+    # Citation patterns to match (in order of specificity)
+    # Pattern 1: (Source: Document Name, Page 123) - most specific
     pattern1 = r'\(Source:\s*([^,]+),\s*Page\s+(\d+)\)'
     
     # Pattern 2: [Source: Document, p. 123]
     pattern2 = r'\[Source:\s*([^,]+),\s*p\.\s*(\d+)\]'
     
-    # Pattern 3: (Document Name, Page 123)
-    pattern3 = r'\(([^,]+),\s*Page\s+(\d+)\)'
+    # Pattern 3: (Document Name, Page 123) - least specific
+    pattern3 = r'\(([^,:]+),\s*Page\s+(\d+)\)'
     
-    # Combine patterns
+    # Try patterns in order of specificity
     patterns = [pattern1, pattern2, pattern3]
     
     for pattern in patterns:
         for match in re.finditer(pattern, text, re.IGNORECASE):
+            # Skip if we already matched this position
+            if match.start() in seen_positions:
+                continue
+            
+            # Mark this position as matched
+            for pos in range(match.start(), match.end()):
+                seen_positions.add(pos)
+            
             document_name = match.group(1).strip()
             page_number = int(match.group(2))
             
