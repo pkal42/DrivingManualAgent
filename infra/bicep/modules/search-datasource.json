@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.39.26.7824",
-      "templateHash": "3337502534911734518"
+      "templateHash": "10476800159225295222"
     }
   },
   "parameters": {
@@ -72,6 +72,9 @@
       "type": "Microsoft.Search/searchServices/dataSources",
       "apiVersion": "2024-06-01-preview",
       "name": "[format('{0}/{1}', parameters('searchServiceName'), parameters('dataSourceName'))]",
+      "identity": {
+        "type": "SystemAssigned"
+      },
       "properties": {
         "type": "azureblob",
         "description": "Data source for PDF driving manuals in blob storage with managed identity authentication",

@@ -10,7 +10,12 @@
 // 1. AI Project → Storage Account:
 //    - Storage Blob Data Contributor: Read/write access to blob containers
 //    - Needed for: Reading source PDFs, writing extracted images
-//
+
+// 1b. Search Service → Storage Account:
+//    - Storage Blob Data Reader: Enables indexer to fetch blobs via managed identity
+//    - Storage Blob Data Contributor: Required for change detection metadata updates
+//    - Needed because local auth is disabled on storage
+
 // 2. AI Project → Search Service:
 //    - Search Index Data Contributor: Read/write access to search indexes
 //    - Needed for: Agent to query search indexes for retrieval
@@ -51,6 +56,8 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' existing = {
   name: searchServiceName
 }
 
+var searchServicePrincipalId = searchService.identity.principalId
+
 // ============================================================================
 // Built-in Role Definitions
 // ============================================================================
@@ -60,6 +67,10 @@ resource searchService 'Microsoft.Search/searchServices@2023-11-01' existing = {
 // Storage Blob Data Contributor role
 // Permissions: Read, write, and delete Azure Storage containers and blobs
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+
+// Storage Blob Data Reader role
+// Permissions: Read blob content (required for search service indexer)
+var storageBlobDataReaderRoleId = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
 
 // Search Index Data Contributor role
 // Permissions: Read, write, and delete search indexes and documents
@@ -87,6 +98,39 @@ resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
     principalId: aiProjectPrincipalId
     principalType: 'ServicePrincipal' // Managed identity is a service principal
     description: 'Grants AI Project access to read/write blob storage for documents and images'
+  }
+}
+
+// ============================================================================
+// Role Assignment: Search Service → Storage Account (Read Only)
+// ============================================================================
+
+// Grant the search service managed identity read access to blob data so indexers
+// can pull documents using managed identity instead of storage keys
+resource searchStorageReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, searchService.id, storageBlobDataReaderRoleId)
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataReaderRoleId)
+    principalId: searchServicePrincipalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Azure AI Search permission to read blobs for indexer ingestion'
+  }
+}
+
+// ============================================================================
+// Role Assignment: Search Service → Storage Account (Contributor)
+// ============================================================================
+
+// Change detection requires write access to track high-watermark metadata
+resource searchStorageContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, searchService.id, storageBlobDataContributorRoleId)
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+    principalId: searchServicePrincipalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Azure AI Search permission to manage blob metadata for change detection'
   }
 }
 

@@ -1,16 +1,20 @@
 # Azure AI Search Indexer Pipeline Requirements
 
-# Azure SDK
-azure-search-documents>=11.4.0  # Azure AI Search client library
-azure-identity>=1.12.0           # Managed identity and authentication
-azure-storage-blob>=12.19.0      # Blob storage access for PDFs and images
+# Azure SDK - Core
+azure-identity>=1.12.0                    # Managed identity and authentication
+azure-search-documents>=11.4.0            # Azure AI Search client library
+azure-storage-blob>=12.19.0               # Blob storage for PDFs
+azure-ai-documentintelligence>=1.0.0      # Document Intelligence for OCR and text extraction
 
-# PDF Generation (for testing)
-reportlab>=4.0.0                 # PDF generation library
-Pillow>=10.0.0                   # Image processing for PDF generation
+# OpenAI SDK
+openai>=1.0.0                             # Azure OpenAI for embeddings
+
+# PDF Generation (for testing only)
+reportlab>=4.0.0                          # PDF generation library
+Pillow>=10.0.0                            # Image processing
 
 # Utilities
-python-dotenv>=1.0.0             # Environment variable management
+python-dotenv>=1.0.0                      # Environment variable management
 # Azure AI Project and Agent Framework
 azure-ai-projects>=1.0.0  # Azure AI Foundry project SDK for agent orchestration
 azure-ai-agents>=1.1.0    # Azure AI Agent Framework v2 for building intelligent agents

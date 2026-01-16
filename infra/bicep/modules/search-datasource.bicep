@@ -59,6 +59,9 @@ resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' exis
 resource dataSource 'Microsoft.Search/searchServices/dataSources@2024-06-01-preview' = {
   parent: searchService
   name: dataSourceName
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     // ========================================================================
     // Data Source Type: Azure Blob Storage
