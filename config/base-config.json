@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Base configuration for DrivingManualAgent - Azure AI Agent Framework v2",
+  
+  "models": {
+    "description": "Model deployment configurations for Azure AI services",
+    
+    "chat": {
+      "description": "Primary chat model for response generation - handles user queries and generates answers with citations",
+      "deployment_name": "gpt-4o",
+      "temperature": 0.7,
+      "max_tokens": 4000,
+      "notes": "temperature controls randomness (0.0=deterministic, 1.0=creative), max_tokens limits response length"
+    },
+    
+    "embedding": {
+      "description": "Text embedding model for RAG - converts text to vector representations for semantic search",
+      "deployment_name": "text-embedding-3-large",
+      "dimensions": 3072,
+      "notes": "Higher dimensions (3072) provide better accuracy but increase storage and compute costs"
+    },
+    
+    "vision": {
+      "description": "Vision model for image analysis - evaluates image relevance using LLM-as-judge approach",
+      "deployment_name": "gpt-4o",
+      "notes": "Uses multimodal capabilities to assess whether images are relevant to user queries"
+    }
+  },
+  
+  "search": {
+    "description": "Azure AI Search configuration for document retrieval",
+    
+    "index_name": "driving-rules-hybrid",
+    "top_k": 5,
+    "hybrid_search": true,
+    "semantic_reranking": true,
+    
+    "notes": {
+      "index_name": "Name of the Azure AI Search index containing driving manual chunks",
+      "top_k": "Number of search results to retrieve - higher values provide more context but increase cost and latency",
+      "hybrid_search": "Combines keyword (BM25) and vector search for better recall",
+      "semantic_reranking": "Uses semantic ranker to reorder results by relevance - improves precision"
+    }
+  },
+  
+  "agent": {
+    "description": "Agent behavior and runtime settings",
+    
+    "instructions_file": "config/agent-instructions.txt",
+    "streaming": true,
+    "max_thread_age_hours": 24,
+    
+    "notes": {
+      "instructions_file": "Path to system prompt template defining agent role and behavior",
+      "streaming": "Enable streaming responses for better user experience (tokens arrive progressively)",
+      "max_thread_age_hours": "How long to retain conversation threads before cleanup"
+    }
+  },
+  
+  "images": {
+    "description": "Image inclusion logic and filtering settings",
+    
+    "relevance_threshold": 0.75,
+    "max_images_per_response": 3,
+    "enable_llm_judge": false,
+    
+    "notes": {
+      "relevance_threshold": "Minimum score (0.0-1.0) for including images - higher values = fewer but more relevant images",
+      "max_images_per_response": "Maximum number of images to include in a single response - prevents overwhelming users",
+      "enable_llm_judge": "Use vision model to validate image relevance (increases cost but improves precision)"
+    }
+  }
+}

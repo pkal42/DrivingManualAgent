@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Cost-optimized configuration profile - reduces Azure costs while maintaining acceptable quality",
+  
+  "models": {
+    "chat": {
+      "deployment_name": "gpt-4o-mini",
+      "description": "Cost-optimized chat model - ~80% cheaper than gpt-4o with slightly lower quality"
+    },
+    
+    "embedding": {
+      "deployment_name": "text-embedding-3-small",
+      "dimensions": 1536,
+      "description": "Smaller embedding model - 50% dimensionality reduction, ~60% cost savings"
+    }
+  },
+  
+  "search": {
+    "top_k": 3,
+    "notes": "Reduced from 5 to 3 results - fewer API calls and tokens processed"
+  },
+  
+  "images": {
+    "max_images_per_response": 2,
+    "notes": "Limit images to reduce blob storage egress costs"
+  },
+  
+  "_profile_notes": {
+    "use_case": "Development, testing, or production workloads with budget constraints",
+    "cost_savings": "Approximately 70-80% cost reduction compared to base configuration",
+    "tradeoffs": "Slightly lower quality responses, fewer search results, reduced image support"
+  }
+}

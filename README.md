@@ -44,18 +44,62 @@ This project implements an intelligent agent that can answer questions about sta
 pip install -r requirements.txt
 ```
 
-### 2. Deploy Infrastructure
+### 2. Configure the Agent
+
+The agent uses hierarchical configuration with profiles for different use cases.
+
+#### Set Required Environment Variables
+
+```bash
+# Copy example file
+cp .env.example .env
+
+# Edit .env and set required values:
+# - AZURE_AI_PROJECT_ENDPOINT
+# - AZURE_SEARCH_ENDPOINT
+```
+
+#### Choose a Configuration Profile
+
+**Base (default)**: Balanced cost and quality
+```bash
+export CONFIG_PROFILE=base
+```
+
+**Cost-Optimized**: ~70-80% cost reduction
+```bash
+export CONFIG_PROFILE=cost-optimized
+```
+
+**Performance-Optimized**: Maximum quality (~2-3x cost)
+```bash
+export CONFIG_PROFILE=performance-optimized
+```
+
+#### Validate Configuration
+
+```bash
+# Test configuration loading
+python src/agent/config_loader.py
+
+# Validate all profiles
+python scripts/validate_config.py --all
+```
+
+See [Configuration Guide](docs/configuration-guide.md) for detailed configuration options.
+
+### 3. Deploy Infrastructure
 
 See [Infrastructure Guide](infra/bicep/README.md) for detailed deployment instructions.
 
-### 3. Generate Test PDFs
+### 4. Generate Test PDFs
 
 ```bash
 cd src/indexing
 python generate_test_pdfs.py --output-dir ../../data/manuals
 ```
 
-### 4. Upload to Blob Storage
+### 5. Upload to Blob Storage
 
 ```bash
 az storage blob upload-batch \
@@ -86,6 +130,11 @@ python validate_indexer.py
 
 ```
 .
+├── config/                   # Configuration profiles
+│   ├── base-config.json              # Base configuration (balanced)
+│   ├── cost-optimized.json           # Cost-optimized profile
+│   ├── performance-optimized.json    # Performance-optimized profile
+│   └── agent-instructions.txt        # Agent system prompt
 ├── infra/bicep/              # Infrastructure as Code
 │   └── modules/              # Bicep modules
 │       ├── search-skillset.bicep    # Skillset definition
@@ -97,13 +146,41 @@ python validate_indexer.py
 │   │   ├── validate_indexer.py      # Pipeline validation
 │   │   ├── generate_test_pdfs.py    # Test PDF generator
 │   │   └── README.md                # Indexing documentation
-│   └── agent/                # Agent implementation (coming soon)
+│   └── agent/                # Agent implementation
+│       ├── config_loader.py         # Hierarchical configuration
+│       ├── agent_factory.py         # Agent creation
+│       └── ...                      # Other agent modules
+├── scripts/                  # Automation scripts
+│   └── validate_config.py           # Configuration validation
+├── docs/                     # Documentation
+│   ├── configuration-guide.md       # Configuration reference
+│   ├── agent-architecture.md        # Agent design
+│   └── ...                          # Other documentation
 ├── data/manuals/             # Sample PDF driving manuals
 ├── tests/                    # Unit and integration tests
+├── .env.example              # Environment variable template
 └── README.md                 # This file
 ```
 
+## Configuration
+
+The agent supports flexible configuration through hierarchical profiles:
+
+- **Base**: Balanced configuration (gpt-4o, 5 search results)
+- **Cost-Optimized**: ~70-80% cost savings (gpt-4o-mini, 3 search results)
+- **Performance-Optimized**: Maximum quality (gpt-4.1, 10 search results, LLM judge)
+
+See [Configuration Guide](docs/configuration-guide.md) for detailed configuration options and deployment scenarios.
+
 ## Features
+
+### Configuration System
+
+- ✅ Hierarchical configuration with JSON profiles
+- ✅ Pydantic-based type-safe validation
+- ✅ Environment variable overrides
+- ✅ Multiple deployment profiles (cost-optimized, performance-optimized)
+- ✅ Comprehensive validation script
 
 ### Indexer Pipeline
 
@@ -125,9 +202,11 @@ python validate_indexer.py
 
 ## Documentation
 
+- [Configuration Guide](docs/configuration-guide.md) - Complete configuration reference
+- [Agent Architecture](docs/agent-architecture.md) - Agent design and implementation
 - [Indexer Pipeline Guide](src/indexing/README.md) - Detailed indexer documentation
 - [Bicep Templates Guide](infra/bicep/README.md) - Infrastructure deployment guide
-- [Configuration Guide](docs/configuration-guide.md) - Configuration options (coming soon)
+- [Indexer Troubleshooting](docs/indexer-troubleshooting.md) - Common issues and solutions
 
 ## Development
 

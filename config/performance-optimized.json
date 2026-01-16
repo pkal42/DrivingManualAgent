@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Performance-optimized configuration profile - maximizes quality and accuracy at higher cost",
+  
+  "models": {
+    "chat": {
+      "deployment_name": "gpt-4.1",
+      "max_tokens": 8000,
+      "description": "High-performance model with 1M context window - best reasoning and accuracy"
+    }
+  },
+  
+  "search": {
+    "top_k": 10,
+    "semantic_reranking": true,
+    "notes": "Retrieve more results for comprehensive context - semantic ranker ensures best results surface"
+  },
+  
+  "images": {
+    "enable_llm_judge": true,
+    "max_images_per_response": 5,
+    "notes": "Use vision model to validate relevance - ensures only truly relevant images are included"
+  },
+  
+  "_profile_notes": {
+    "use_case": "Production workloads requiring highest quality, critical applications, demos",
+    "cost_impact": "Approximately 2-3x cost compared to base configuration",
+    "benefits": "Maximum accuracy, comprehensive context, validated image relevance, longer responses"
+  }
+}
