@@ -9,8 +9,10 @@ azure-storage-blob>=12.19.0      # Blob storage access for PDFs and images
 reportlab>=4.0.0                 # PDF generation library
 Pillow>=10.0.0                   # Image processing for PDF generation
 
-# Utilities
+# Configuration and Validation
+pydantic>=2.0.0                  # Type-safe configuration with validation
 python-dotenv>=1.0.0             # Environment variable management
+
 # Azure AI Project and Agent Framework
 azure-ai-projects>=1.0.0  # Azure AI Foundry project SDK for agent orchestration
 azure-ai-agents>=1.1.0    # Azure AI Agent Framework v2 for building intelligent agents
