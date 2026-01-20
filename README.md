@@ -5,7 +5,7 @@ Multimodal RAG agent using Azure AI Agent Framework v2 for answering questions f
 ## Overview
 
 This project implements an intelligent agent that can answer questions about state driving laws and regulations by:
-- Extracting text and images from PDF driving manuals
+- Extracting text and images from PDF driving manuals using Azure Document Intelligence OCR
 - Creating searchable embeddings for semantic search
 - Providing accurate answers with citations and relevant images
 - Supporting multiple US states with hybrid search capabilities
@@ -14,11 +14,13 @@ This project implements an intelligent agent that can answer questions about sta
 
 ### Components
 
-1. **Azure AI Search Indexer Pipeline** (`src/indexing/`)
-   - DocumentExtractionSkill for PDF text and image extraction
-   - TextSplitSkill for token-based chunking (512 tokens, 100 overlap)
-   - AzureOpenAIEmbeddingSkill for vector embeddings (text-embedding-3-large)
-   - Hybrid search index (keyword + vector + semantic)
+1. **Python Indexing Pipeline** (`src/indexing/`)
+   - Azure Document Intelligence for OCR-enabled PDF text and image extraction (prebuilt-layout model)
+   - Character-based text chunking (1000 chars, 200 overlap)
+   - Azure OpenAI for vector embeddings (text-embedding-3-large, 3072 dimensions)
+   - Hybrid search index (keyword + vector + semantic) via Azure AI Search
+   - Managed identity authentication throughout
+   - Currently tested with Michigan DMV 2024 manual (286 chunks indexed)
 
 2. **Agent Framework** (`src/agent/`) - *Coming soon*
    - Azure AI Agent Framework v2 implementation
@@ -27,6 +29,8 @@ This project implements an intelligent agent that can answer questions about sta
 
 3. **Infrastructure as Code** (`infra/bicep/`)
    - Modular Bicep templates with comprehensive comments
+   - Azure Document Intelligence deployment for OCR
+   - Azure AI Search, Storage, and Foundry (Azure OpenAI) resources
    - Managed identity authentication (no keys)
    - RBAC-based security model
 
@@ -36,70 +40,25 @@ This project implements an intelligent agent that can answer questions about sta
 
 - Azure subscription
 - Python 3.9+
-- Azure CLI
+- Azure CLI (authenticated with `az login`)
+- Deployed Azure infrastructure (see Infrastructure Guide)
 
 ### 1. Install Dependencies
 
 ```bash
-pip install -r requirements.txt
-```
-
-### 2. Configure the Agent
-
-The agent uses hierarchical configuration with profiles for different use cases.
-
-#### Set Required Environment Variables
-
-```bash
-# Copy example file
-cp .env.example .env
-
-# Edit .env and set required values:
-# - AZURE_AI_PROJECT_ENDPOINT
-# - AZURE_SEARCH_ENDPOINT
-```
-
-#### Choose a Configuration Profile
-
-**Base (default)**: Balanced cost and quality
-```bash
-export CONFIG_PROFILE=base
-```
-
-**Cost-Optimized**: ~70-80% cost reduction
-```bash
-export CONFIG_PROFILE=cost-optimized
-```
-
-**Performance-Optimized**: Maximum quality (~2-3x cost)
-```bash
-export CONFIG_PROFILE=performance-optimized
-```
-
-#### Validate Configuration
-
-```bash
-# Test configuration loading
-python src/agent/config_loader.py
-
-# Validate all profiles
-python scripts/validate_config.py --all
-```
-
-See [Configuration Guide](docs/configuration-guide.md) for detailed configuration options.
-
-### 3. Deploy Infrastructure
-
-See [Infrastructure Guide](infra/bicep/README.md) for detailed deployment instructions.
-
-### 4. Generate Test PDFs
-
-```bash
+# Create and activate virtual environment
 cd src/indexing
-python generate_test_pdfs.py --output-dir ../../data/manuals
+python -m venv .venv
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # Linux/Mac
+
+# Install required packages
+pip install -r ../../requirements.txt
 ```
 
-### 5. Upload to Blob Storage
+### 2. Upload PDFs to Blob Storage
+
+Upload driving manual PDFs to the Azure Blob Storage container:
 
 ```bash
 az storage blob upload-batch \
@@ -109,72 +68,89 @@ az storage blob upload-batch \
   --auth-mode login
 ```
 
-### 5. Run Indexer
+### 3. Run Python Indexing Pipeline
 
-```bash
-az search indexer run \
-  --name driving-manual-indexer \
-  --service-name <search-service> \
-  --resource-group <rg-name>
-```
-
-### 6. Validate Pipeline
+The indexing pipeline processes PDFs using Azure Document Intelligence OCR and uploads chunks to Azure AI Search:
 
 ```bash
 cd src/indexing
-export AZURE_SEARCH_ENDPOINT=https://<search-service>.search.windows.net
-python validate_indexer.py
+python index_documents.py
+```
+
+The pipeline will:
+1. List all PDFs in the blob storage container
+2. Extract text and images using Azure Document Intelligence (prebuilt-layout model with OCR)
+3. Chunk text into 1000-character segments with 200-character overlap
+4. Generate embeddings using Azure OpenAI (text-embedding-3-large)
+5. Upload chunks to Azure AI Search index
+
+### 4. Verify Indexing
+
+Check that documents were successfully indexed:
+
+```bash
+# Query the search index
+az search index show-statistics \
+  --index-name driving-manual-index \
+  --service-name <search-service> \
+  --resource-group <rg-name>
 ```
 
 ## Repository Structure
 
 ```
 .
-├── config/                   # Configuration profiles
+├── config/                   # Configuration profiles (for future agent)
 │   ├── base-config.json              # Base configuration (balanced)
 │   ├── cost-optimized.json           # Cost-optimized profile
 │   ├── performance-optimized.json    # Performance-optimized profile
 │   └── agent-instructions.txt        # Agent system prompt
 ├── infra/bicep/              # Infrastructure as Code
-│   └── modules/              # Bicep modules
-│       ├── search-skillset.bicep    # Skillset definition
-│       ├── search-index.bicep       # Index schema
-│       ├── search-datasource.bicep  # Blob data source
-│       └── search-indexer.bicep     # Indexer orchestration
+│   ├── main.bicep                    # Main orchestration template
+│   ├── parameters/                   # Environment-specific parameters
+│   └── modules/                      # Bicep modules
+│       ├── ai-search.bicep           # Azure AI Search service
+│       ├── document-intelligence.bicep  # Document Intelligence for OCR
+│       ├── foundry-project.bicep     # AI Foundry project (Azure OpenAI)
+│       ├── model-deployments.bicep   # Model deployments
+│       ├── storage.bicep             # Blob storage for PDFs
+│       └── role-assignments.bicep    # RBAC configurations
 ├── src/
-│   ├── indexing/             # Indexer pipeline tools
-│   │   ├── validate_indexer.py      # Pipeline validation
+│   ├── indexing/             # Python indexing pipeline
+│   │   ├── index_documents.py       # Main indexing script (Azure services)
 │   │   ├── generate_test_pdfs.py    # Test PDF generator
-│   │   └── README.md                # Indexing documentation
-│   └── agent/                # Agent implementation
+│   │   └── .venv/                   # Python virtual environment
+│   └── agent/                # Agent implementation (coming soon)
 │       ├── config_loader.py         # Hierarchical configuration
-│       ├── agent_factory.py         # Agent creation
 │       └── ...                      # Other agent modules
 ├── scripts/                  # Automation scripts
 │   └── validate_config.py           # Configuration validation
 ├── docs/                     # Documentation
 │   ├── configuration-guide.md       # Configuration reference
-│   ├── agent-architecture.md        # Agent design
 │   └── ...                          # Other documentation
 ├── data/manuals/             # Sample PDF driving manuals
+│   └── MI_DMV_2024.pdf              # Michigan DMV 2024 manual (indexed)
 ├── tests/                    # Unit and integration tests
+├── requirements.txt          # Python dependencies
 ├── .env.example              # Environment variable template
 └── README.md                 # This file
 ```
 
-## Configuration
-
-The agent supports flexible configuration through hierarchical profiles:
-
-- **Base**: Balanced configuration (gpt-4o, 5 search results)
-- **Cost-Optimized**: ~70-80% cost savings (gpt-4o-mini, 3 search results)
-- **Performance-Optimized**: Maximum quality (gpt-4.1, 10 search results, LLM judge)
-
-See [Configuration Guide](docs/configuration-guide.md) for detailed configuration options and deployment scenarios.
-
 ## Features
 
-### Configuration System
+### Indexing Pipeline (Completed)
+
+- ✅ Python-based indexing pipeline using Azure SDK
+- ✅ Azure Document Intelligence OCR for text and image extraction (prebuilt-layout model)
+- ✅ Character-based text chunking (1000 chars, 200 char overlap)
+- ✅ Vector embeddings with Azure OpenAI text-embedding-3-large (3072 dimensions)
+- ✅ Hybrid search index (keyword + vector + semantic) via Azure AI Search (API 2024-07-01)
+- ✅ Figure caption extraction from images
+- ✅ Managed identity authentication (DefaultAzureCredential)
+- ✅ Comprehensive Bicep templates with inline comments
+- ✅ Successfully tested with Michigan DMV 2024 manual (286 chunks indexed)
+
+### Configuration System (For Future Agent)
 
 - ✅ Hierarchical configuration with JSON profiles
 - ✅ Pydantic-based type-safe validation
@@ -182,169 +158,119 @@ See [Configuration Guide](docs/configuration-guide.md) for detailed configuratio
 - ✅ Multiple deployment profiles (cost-optimized, performance-optimized)
 - ✅ Comprehensive validation script
 
-### Indexer Pipeline
-
-- ✅ PDF text and image extraction with DocumentExtractionSkill
-- ✅ Token-based text chunking (512 tokens, 100 overlap)
-- ✅ Vector embeddings with text-embedding-3-large (3072-dim)
-- ✅ Hybrid search (keyword + vector + semantic)
-- ✅ Image extraction and storage
-- ✅ Managed identity authentication
-- ✅ Comprehensive Bicep templates with inline comments
-
 ### Coming Soon
 
 - 🔄 Agent Framework v2 implementation
 - 🔄 Multimodal response generation
 - 🔄 Citation tracking
-- 🔄 GitHub Actions CI/CD
-- 🔄 Production deployment workflows
+- 🔄 GitHub Actions CI/CD for automated indexing
+- 🔄 Deployment to Azure Container Apps Jobs
 
 ## Documentation
 
-- [Configuration Guide](docs/configuration-guide.md) - Complete configuration reference
-- [Agent Architecture](docs/agent-architecture.md) - Agent design and implementation
-- [Indexer Pipeline Guide](src/indexing/README.md) - Detailed indexer documentation
+- [Indexer Pipeline Guide](src/indexing/README.md) - Detailed indexing documentation
 - [Bicep Templates Guide](infra/bicep/README.md) - Infrastructure deployment guide
-- [Indexer Troubleshooting](docs/indexer-troubleshooting.md) - Common issues and solutions
+- [Configuration Guide](docs/configuration-guide.md) - Agent configuration reference (for future agent)
+
+## Roadmap
+
+- [x] Azure infrastructure deployment (Storage, Search, Document Intelligence, Foundry)
+- [x] Python indexing pipeline with Azure Document Intelligence OCR
+- [x] Character-based chunking and embedding generation
+- [x] Successfully indexed Michigan DMV 2024 manual
+- [ ] GitHub Actions workflow for automated indexing
+- [ ] Deployment to Azure Container Apps Jobs
+- [ ] Azure AI Agent Framework v2 implementation
+- [ ] Multimodal response generation with citations
+- [ ] Support for additional state driving manuals
+- [ ] Web UI for agent interaction
 
 ## Development
 
-### Running Tests
+### Running the Indexing Pipeline
 
 ```bash
-# Install test dependencies
-pip install -r requirements.txt
-
-# Run validation
+# Activate virtual environment
 cd src/indexing
-python validate_indexer.py --help
+.venv\Scripts\activate  # Windows
+# source .venv/bin/activate  # Linux/Mac
+
+# Run indexing for all PDFs in blob storage
+python index_documents.py
 ```
 
-### Generating Sample PDFs
+The script will:
+1. Connect to Azure Blob Storage using managed identity
+2. List all PDFs in the 'pdfs' container
+3. For each PDF:
+   - Download and analyze with Azure Document Intelligence (OCR enabled)
+   - Extract text including figure captions
+   - Chunk text (1000 chars, 200 overlap)
+   - Generate embeddings via Azure OpenAI
+   - Upload to Azure AI Search index
+4. Report indexing statistics
 
-The project includes a script to generate realistic sample driving manual PDFs:
+### Configuration
+
+Edit `index_documents.py` to customize:
+- `STORAGE_ACCOUNT`: Blob storage account name
+- `CONTAINER_NAME`: Container with PDFs (default: "pdfs")
+- `DOCUMENT_INTELLIGENCE_ENDPOINT`: Document Intelligence endpoint
+- `FOUNDRY_ENDPOINT`: Azure OpenAI endpoint
+- `EMBEDDING_DEPLOYMENT`: Embedding model deployment name
+- `SEARCH_ENDPOINT`: Azure AI Search endpoint
+- `INDEX_NAME`: Search index name
+- `CHUNK_SIZE`: Characters per chunk (default: 1000)
+- `CHUNK_OVERLAP`: Character overlap (default: 200)
+
+### Generating Sample PDFs
 
 ```bash
 cd src/indexing
 python generate_test_pdfs.py --output-dir ../../data/manuals
 ```
 
-This creates:
-- `california-dmv-handbook-2024.pdf` (3 pages)
-- `texas-driver-handbook-2024.pdf` (3 pages)
-
 ## Security
 
 All Azure resources use managed identity for authentication:
 - No connection strings or access keys in code
-- RBAC-based access control
-- Principle of least privilege
+- RBAC-based access control (least privilege)
+- DefaultAzureCredential for local development and Azure deployments
 
 Required RBAC roles:
-- Search service → Storage: "Storage Blob Data Contributor"
-- Search service → Azure OpenAI: "Cognitive Services User"
-- Application → Search: "Search Index Data Contributor"
+- **User/Service Principal**:
+  - Storage Blob Data Contributor (for uploading PDFs)
+  - Storage Blob Data Reader (for reading PDFs)
+  - Search Index Data Contributor (for uploading search documents)
+- **Document Intelligence Managed Identity**:
+  - Storage Blob Data Reader (for reading PDFs during OCR)
+- **Azure OpenAI** (Foundry):
+  - Accessed via managed identity authentication (no API keys)
+  - `disableLocalAuth=true` enforced for security
 
 ## Contributing
 
 This project follows best practices for Azure AI development:
-- Comprehensive inline comments in all Bicep templates
+- Comprehensive inline comments in all Bicep templates and Python code
 - Type hints and docstrings in Python code
-- Validation scripts for testing
+- Managed identity for all Azure authentication
 - Modular, reusable infrastructure components
+- Stable API versions (e.g., Search API 2024-07-01)
 
-## License
+### Development Workflow
 
-MIT License - See LICENSE file for details
+1. Create a feature branch
+2. Make your changes
+3. Test locally using Azure CLI authentication
+4. Ensure code follows existing patterns and style
+5. Submit a pull request
 
 ## Related Issues
 
 - [Issue #1: Repository Structure and IaC Foundation](https://github.com/pkal42/DrivingManualAgent/issues/1)
 - [Issue #2: Azure AI Search Indexer Pipeline Setup](https://github.com/pkal42/DrivingManualAgent/issues/2)
-# Run all tests
-pytest
-
-# Run with coverage
-pytest --cov=src tests/
-
-# Run specific test file
-pytest tests/test_agent.py
-```
-
-### Code Style
-
-This project follows PEP 8 style guidelines. Format code using:
-
-```bash
-# Install development dependencies
-pip install black flake8 mypy
-
-# Format code
-black src/ tests/
-
-# Check linting
-flake8 src/ tests/
-
-# Type checking
-mypy src/
-```
-
-## Key Features
-
-- **Multimodal Understanding**: Processes both text and images from driving manuals
-- **Accurate Citations**: Provides source references for all answers
-- **Semantic Search**: Uses Azure AI Search for intelligent document retrieval
-- **Scalable Architecture**: Modular design for easy extension
-- **Observability**: Built-in telemetry and monitoring with Azure Monitor
-- **Infrastructure as Code**: Fully automated deployment with Bicep
-- **Secure by Default**: Managed identities and RBAC for least-privilege access
-
-## Security
-
-- All Azure resources use **Managed Identity** for authentication
-- **RBAC** assignments follow the principle of least privilege
-- No secrets or connection strings in code
-- **OIDC** for GitHub Actions (no stored credentials)
-
-## Troubleshooting
-
-### Common Issues
-
-**Issue**: `ModuleNotFoundError` when running Python scripts
-- **Solution**: Ensure virtual environment is activated and dependencies are installed
-
-**Issue**: Bicep deployment fails with permission errors
-- **Solution**: Verify service principal has Contributor role on subscription
-
-**Issue**: GitHub Actions deployment fails
-- **Solution**: Check OIDC federated credentials are configured correctly
-
-**Issue**: Search returns no results
-- **Solution**: Verify indexing pipeline ran successfully and documents were uploaded
-
-## Contributing
-
-1. Create a feature branch
-2. Make your changes
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
 
 ## License
 
-This project is licensed under the MIT License.
+MIT License - See LICENSE file for details
 
-## Support
-
-For issues and questions:
-- Create an issue in the GitHub repository
-- Contact the maintainers
-
-## Roadmap
-
-- [ ] Support for multiple state driving manuals
-- [ ] Web UI for agent interaction
-- [ ] Advanced citation formatting
-- [ ] Multi-language support
-- [ ] Conversation history and context retention

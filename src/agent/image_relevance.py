@@ -319,7 +319,11 @@ def calculate_image_relevance_score(
         This is a placeholder for advanced scoring logic.
         Current implementation uses search score directly.
     """
-    # TODO: Implement advanced scoring logic
+    # TODO: Implement advanced scoring logic:
+    # - Analyze figure captions for keyword matches with query
+    # - Weight images from earlier pages higher (usually more fundamental)
+    # - Boost diagrams/illustrations over photographs
+    # - Consider image position within page context
     # For now, return normalized search score
     return min(search_score / 10.0, 1.0) if search_score > 1.0 else search_score
 

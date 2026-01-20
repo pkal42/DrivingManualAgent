@@ -30,13 +30,13 @@
   "search": {
     "description": "Azure AI Search configuration for document retrieval",
     
-    "index_name": "driving-rules-hybrid",
+    "index_name": "driving-manual-index",
     "top_k": 5,
     "hybrid_search": true,
     "semantic_reranking": true,
     
     "notes": {
-      "index_name": "Name of the Azure AI Search index containing driving manual chunks",
+      "index_name": "Name of the Azure AI Search index containing driving manual chunks (character-based, 1000/200)",
       "top_k": "Number of search results to retrieve - higher values provide more context but increase cost and latency",
       "hybrid_search": "Combines keyword (BM25) and vector search for better recall",
       "semantic_reranking": "Uses semantic ranker to reorder results by relevance - improves precision"

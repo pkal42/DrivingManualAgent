@@ -18,20 +18,22 @@ This guide explains the automated document ingestion pipeline for the DrivingMan
 The document ingestion pipeline automates the process of:
 
 1. **Uploading** PDF driving manuals to Azure Blob Storage
-2. **Triggering** Azure AI Search indexer to process documents
-3. **Monitoring** indexer execution and skillset processing
-4. **Validating** enrichment results (chunks, images, embeddings)
-5. **Reporting** results and errors
+2. **Extracting** text and images using Azure Document Intelligence OCR (prebuilt-layout model)
+3. **Chunking** text into 1000-character segments with 200-character overlap
+4. **Embedding** chunks using Azure OpenAI text-embedding-3-large (3072 dimensions)
+5. **Indexing** to Azure AI Search with hybrid search support
+6. **Validating** results and reporting statistics
 
 ### Key Features
 
-- ✅ Automatic metadata extraction from file paths and names
-- ✅ Directory structure preservation in blob storage
-- ✅ Real-time indexer monitoring with progress tracking
-- ✅ Comprehensive validation of enrichment results
-- ✅ Error detection and reporting
-- ✅ GitHub Actions automation
-- ✅ Managed identity authentication (no secrets in code)
+- ✅ Python-based pipeline using Azure SDK (100% managed services)
+- ✅ OCR-enabled text extraction with Azure Document Intelligence
+- ✅ Figure caption extraction from embedded images
+- ✅ Character-based chunking (1000 chars, 200 overlap)
+- ✅ Batch embedding generation for efficiency
+- ✅ Managed identity authentication throughout (no API keys)
+- ✅ Stable API versions (Search 2024-07-01 GA)
+- ✅ Comprehensive error handling and logging
 
 ## Pipeline Architecture
 
@@ -43,38 +45,30 @@ The document ingestion pipeline automates the process of:
          │
          ▼
 ┌─────────────────┐
-│  Validation     │ ← Check size, format, naming
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Upload to      │ ← Add metadata, preserve structure
+│  Upload to      │ ← Upload to blob storage (pdfs container)
 │  Blob Storage   │
 └────────┬────────┘
          │
          ▼
-┌─────────────────┐
-│  Trigger        │ ← Start indexer run
-│  Indexer        │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Monitor        │ ← Poll status until completion
-│  Execution      │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Validate       │ ← Check chunks, images, embeddings
-│  Enrichment     │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Generate       │ ← JSON/Markdown reports
-│  Reports        │
-└─────────────────┘
+┌─────────────────────────────────────────────────┐
+│  Python Indexing Pipeline (index_documents.py)   │
+│  ┌─────────────────────────────────────────────┐│
+│  │ 1. List PDFs from blob storage              ││
+│  │ 2. Download and analyze with Doc Intel     ││
+│  │ 3. Extract text + OCR + figure captions    ││
+│  │ 4. Chunk text (1000 chars, 200 overlap)    ││
+│  │ 5. Generate embeddings (Azure OpenAI)      ││
+│  │ 6. Upload to Search index (batch)          ││
+│  └─────────────────────────────────────────────┘│
+└─────────────────┬───────────────────────────────┘
+                  │
+                  ▼
+┌─────────────────────────────────┐
+│  Azure AI Search Index          │
+│  - 286 chunks (MI DMV 2024)     │
+│  - Hybrid search enabled        │
+│  - 3072-dim vectors             │
+└─────────────────────────────────┘
 ```
 
 ## Manual Ingestion
@@ -83,196 +77,247 @@ The document ingestion pipeline automates the process of:
 
 1. **Azure Resources Deployed**
    - Storage account with `pdfs` container
-   - Azure AI Search service with indexer and skillset
+   - Azure AI Search service with index
+   - Azure Document Intelligence resource
+   - Azure OpenAI (Foundry) with text-embedding-3-large deployment
    - Proper RBAC permissions configured
 
-2. **Environment Variables**
+2. **Environment Setup**
    ```bash
-   export AZURE_STORAGE_ACCOUNT="<storage-account-name>"
-   export AZURE_SEARCH_ENDPOINT="https://<search-service>.search.windows.net"
-   export USE_MANAGED_IDENTITY="true"  # or false for local dev with keys
+   cd src/indexing
+   python -m venv .venv
+   .venv\Scripts\activate  # Windows
+   # source .venv/bin/activate  # Linux/Mac
+   pip install -r ../../requirements.txt
    ```
 
-3. **Python Dependencies**
+3. **Authentication**
+   Ensure you're authenticated with Azure CLI:
    ```bash
-   pip install -r requirements.txt
+   az login
+   az account set --subscription <subscription-id>
    ```
 
-### Step 1: Upload Documents
+### Step 1: Upload PDFs to Blob Storage
 
-Upload a single PDF:
+Upload PDFs manually using Azure CLI:
 
 ```bash
-python src/indexing/upload_documents.py \
-  --file data/manuals/california-dmv-handbook-2024.pdf \
-  --state California \
-  --year 2024 \
-  --verbose
+az storage blob upload-batch \
+  -d pdfs \
+  -s data/manuals \
+  --account-name <storage-account> \
+  --auth-mode login
 ```
 
-Upload a directory (batch):
+Or upload a single file:
 
 ```bash
-python src/indexing/upload_documents.py \
-  --directory data/manuals \
-  --recursive \
-  --overwrite \
-  --verbose
+az storage blob upload \
+  -f data/manuals/MI_DMV_2024.pdf \
+  -c pdfs \
+  -n MI_DMV_2024.pdf \
+  --account-name <storage-account> \
+  --auth-mode login
 ```
 
-**Metadata Extraction:**
-The script automatically extracts metadata from paths:
-- `California/2024/manual.pdf` → `state=California, year=2024`
-- `texas-handbook-2023.pdf` → `year=2023`
-- `manual-v2.pdf` → `version=2`
+### Step 2: Run Python Indexing Pipeline
 
-### Step 2: Trigger Indexer
-
-Trigger and wait for completion:
+Execute the indexing script to process all PDFs:
 
 ```bash
-python src/indexing/trigger_indexer.py \
-  --wait \
-  --timeout 1800 \
-  --verbose
+cd src/indexing
+python index_documents.py
 ```
 
-Just trigger (don't wait):
+The script will:
+1. List all PDFs in the blob storage `pdfs` container
+2. Download each PDF and analyze with Document Intelligence
+3. Extract text using OCR (prebuilt-layout model)
+4. Extract figure captions from images
+5. Chunk text into 1000-character segments (200 char overlap)
+6. Generate embeddings using Azure OpenAI
+7. Upload chunks to Azure AI Search index in batches
 
-```bash
-python src/indexing/trigger_indexer.py --verbose
+**Configuration:**
+Edit `index_documents.py` to customize:
+- Storage account and container
+- Document Intelligence endpoint
+- Foundry (Azure OpenAI) endpoint
+- Search endpoint and index name
+- Chunking parameters (size and overlap)
+
+**Expected Output:**
+```
+=== Starting Indexing Pipeline ===
+Storage Account: stdrvagdbvxlqv
+Container: pdfs
+Document Intelligence: https://di-drvagent-dev-bvxlqv.cognitiveservices.azure.com
+Search Endpoint: https://srch-drvagent-dev-bvxlqv.search.windows.net
+Index: driving-manual-index
+
+Found 1 PDF(s) to process
+
+=== Processing: MI_DMV_2024.pdf ===
+Extracting text with Document Intelligence (OCR enabled)...
+Processing pages: 100% complete
+Extracted text from 91 pages
+
+Chunking text (1000 chars, 200 overlap)...
+Created 286 chunks
+
+Generating embeddings (batch size: 100)...
+Batch 1/3: 100 chunks
+Batch 2/3: 100 chunks
+Batch 3/3: 86 chunks
+Generated 286 embeddings
+
+Uploading to search index...
+Upload complete: 286 succeeded, 0 failed
+
+=== Completed indexing: MI_DMV_2024.pdf ===
+Indexing pipeline completed successfully!
 ```
 
-Check status without triggering:
+### Step 3: Verify Indexing
+
+Check that documents were indexed:
 
 ```bash
-python src/indexing/trigger_indexer.py --status-only
+az search index show-statistics \
+  --index-name driving-manual-index \
+  --service-name <search-service> \
+  --resource-group <rg-name>
 ```
 
-### Step 3: Validate Enrichment
-
-Run validation and generate reports:
+Query the index to verify:
 
 ```bash
-python src/indexing/validate_enrichment.py \
-  --json-output validation.json \
-  --markdown-output validation.md \
-  --verbose
-```
-
-### Step 4: Monitor Skillset (Optional)
-
-Analyze indexer errors:
-
-```bash
-python src/indexing/monitor_skillset.py \
-  --show-errors \
-  --show-warnings \
-  --output monitoring-report.json
+az search index search \
+  --index-name driving-manual-index \
+  --service-name <search-service> \
+  --search-text "stop sign" \
+  --query-type simple \
+  --top 3
 ```
 
 ## Automated Ingestion
 
-### GitHub Actions Workflow
+### GitHub Actions Workflow (Future)
 
-The ingestion pipeline is automated via GitHub Actions (`.github/workflows/ingest-documents.yml`).
+The ingestion pipeline can be automated via GitHub Actions for scheduled or event-driven processing.
 
-#### Trigger Methods
+**Planned Features:**
+- Automatic PDF detection in repository
+- Scheduled daily/weekly indexing
+- Manual workflow dispatch with parameters
+- Status notifications and reporting
+- Azure Container Apps Jobs deployment
 
-**1. Manual Trigger**
+**Potential Implementation:**
+1. **Trigger on PDF commit**: Detect new PDFs in `data/manuals/`
+2. **Upload to blob**: Use `az storage blob upload-batch`
+3. **Run indexing**: Execute Python pipeline in container
+4. **Validate results**: Check index statistics
+5. **Report status**: Post summary to PR or issue
 
-Go to Actions → Ingest Documents → Run workflow
+### Deployment Options
 
-Options:
-- **State**: US state name (e.g., California)
-- **Document Paths**: Comma-separated paths to PDFs
-- **Skip Validation**: Skip pre-upload checks
-- **Reset Indexer**: Reprocess all documents
+**Option 1: GitHub Actions**
+- Runs on GitHub-hosted runners
+- Good for occasional/manual indexing
+- Uses OIDC for Azure authentication
+- Free tier limits may apply
 
-**2. Automatic Trigger**
+**Option 2: Azure Container Apps Jobs**
+- Runs in Azure environment
+- Better for scheduled/regular indexing
+- Direct access to Azure resources
+- No GitHub minutes consumed
 
-Push PDF files to `data/manuals/`:
-
-```bash
-git add data/manuals/california-manual.pdf
-git commit -m "Add California driving manual"
-git push
-```
-
-The workflow automatically:
-- Validates PDFs
-- Uploads to blob storage
-- Triggers indexer
-- Monitors execution
-- Validates results
-- Posts report to PR (if applicable)
-
-### Workflow Jobs
-
-1. **validate-pdfs**: Check file format, size, corruption
-2. **upload**: Upload PDFs with metadata to blob storage
-3. **trigger-indexer**: Start indexer run (optional reset)
-4. **monitor**: Poll indexer status until completion
-5. **validate**: Check enrichment completeness and quality
-6. **notify-failure**: Create issue if pipeline fails
-7. **summary**: Generate workflow summary
-
-### Viewing Results
-
-- **Workflow Summary**: GitHub Actions run page
-- **Validation Reports**: Download from Artifacts section
-- **PR Comments**: Inline validation results (for PRs)
-- **Issues**: Automatic issue creation on failure
+**Option 3: Manual Local Execution**
+- Current approach - works well for development
+- Full control and debugging capability
+- Requires local Azure CLI authentication
+- Good for testing and validation
 
 ## Validation and Monitoring
 
-### Validation Checks
+### Index Validation
 
-The validation script checks:
+After running the indexing pipeline, verify results:
 
-#### 1. Document Completeness
-- All uploaded PDFs are indexed
-- No missing documents
-
-#### 2. Chunk Generation
-- Appropriate number of chunks per document
-- No documents with too few/many chunks
-- Chunk size distribution
-
-#### 3. Image Extraction
-- Images detected and extracted
-- Image URLs and descriptions populated
-- Reasonable image extraction rate
-
-#### 4. Field Population
-- Required fields populated in all chunks
-- Metadata fields present
-- No missing data
-
-#### 5. Embedding Presence
-- Vector embeddings generated
-- Embedding dimensions correct
-
-### Monitoring Skillset
-
-Monitor indexer execution history:
+#### 1. Document Count
+Check that all PDFs were processed:
 
 ```bash
-# View recent executions
-python src/indexing/monitor_skillset.py --indexer driving-manual-indexer
-
-# Analyze errors
-python src/indexing/monitor_skillset.py --show-errors --limit 50
-
-# View skillset definition
-python src/indexing/monitor_skillset.py --show-skillset
+az search index show-statistics \
+  --index-name driving-manual-index \
+  --service-name <search-service> \
+  --resource-group <rg-name> \
+  --query 'documentCount'
 ```
+
+Expected: Number of chunks (e.g., 286 for MI_DMV_2024.pdf)
+
+#### 2. Search Functionality
+Test hybrid search:
+
+```bash
+az search index search \
+  --index-name driving-manual-index \
+  --service-name <search-service> \
+  --search-text "stop sign" \
+  --query-type semantic \
+  --top 5
+```
+
+Verify results include relevant chunks with proper metadata.
+
+#### 3. Field Population
+Check that required fields are populated:
+
+```python
+from azure.search.documents import SearchClient
+from azure.identity import DefaultAzureCredential
+
+client = SearchClient(
+    endpoint="https://<search-service>.search.windows.net",
+    index_name="driving-manual-index",
+    credential=DefaultAzureCredential()
+)
+
+# Get a sample document
+results = client.search("*", top=1)
+for doc in results:
+    print(f"chunk_id: {doc['chunk_id']}")
+    print(f"content: {doc['content'][:100]}...")
+    print(f"document_id: {doc['document_id']}")
+    print(f"page_number: {doc['page_number']}")
+    print(f"Vector dims: {len(doc['chunk_vector'])}")
+```
+
+Expected: All fields populated, 3072-dim vectors
+
+#### 4. Embedding Quality
+Verify embeddings are non-zero:
+
+```python
+results = client.search("*", top=10)
+for doc in results:
+    vector = doc.get('chunk_vector', [])
+    if vector:
+        avg = sum(vector) / len(vector)
+        print(f"Doc {doc['chunk_id']}: avg={avg:.6f}, dims={len(vector)}")
+```
+
+Expected: Non-zero averages, consistent dimensions
 
 ## Troubleshooting
 
 ### Common Issues
 
-#### 1. Upload Fails - Authentication Error
+#### 1. Authentication Errors
 
 **Symptom:**
 ```
@@ -281,216 +326,259 @@ Error: DefaultAzureCredential failed to retrieve a token
 
 **Solutions:**
 - Verify you're logged in: `az login`
-- Check RBAC roles: User needs "Storage Blob Data Contributor"
-- For GitHub Actions: Verify OIDC configuration
+- Check RBAC roles:
+  - User needs "Storage Blob Data Contributor" and "Storage Blob Data Reader"
+  - User needs "Search Index Data Contributor"
+  - Document Intelligence MI needs "Storage Blob Data Reader"
+- Refresh credentials if stale: `az logout && az login`
+- Wait 10-15 seconds after role assignment for propagation
 
-#### 2. Indexer Doesn't Start
-
-**Symptom:**
-```
-Error: Indexer not found: driving-manual-indexer
-```
-
-**Solutions:**
-- Verify indexer exists: `az search indexer show --name driving-manual-indexer --service-name <service>`
-- Check resource deployment
-- Verify search endpoint is correct
-
-#### 3. Indexer Fails with Errors
+#### 2. Document Intelligence Extraction Fails
 
 **Symptom:**
 ```
-Indexer completed with errors
-Items failed: 5
+Error analyzing document with Document Intelligence
+ServiceResponseError: (InvalidRequest) The request is invalid
 ```
 
 **Solutions:**
+- Verify Document Intelligence resource is deployed
+- Check PDF is not encrypted or password-protected
+- Ensure PDF is under 500 MB and under 2000 pages
+- Verify managed identity has Storage Blob Data Reader role
+- Check Document Intelligence endpoint is correct
 
-1. **Check Error Details:**
-   ```bash
-   python src/indexing/monitor_skillset.py --show-errors
-   ```
-
-2. **Common Skillset Errors:**
-   - **DocumentExtractionSkill**: PDF corrupted or unsupported format
-   - **SplitSkill**: Text too long or encoding issues
-   - **EmbeddingSkill**: Azure OpenAI throttling or quota exceeded
-
-3. **Fix and Retry:**
-   ```bash
-   # Reset indexer to reprocess
-   python src/indexing/trigger_indexer.py --reset --wait
-   ```
-
-#### 4. Validation Fails - Missing Documents
+#### 3. Embedding Generation Fails
 
 **Symptom:**
 ```
-Validation failed: Missing documents
-- california-manual.pdf
+Error generating embeddings
+openai.RateLimitError: Rate limit exceeded
 ```
 
 **Solutions:**
-- Check upload was successful
-- Verify blob exists: `az storage blob list -c pdfs --account-name <account>`
-- Re-upload missing files
-- Trigger indexer again
+- Check Azure OpenAI deployment exists
+- Verify text-embedding-3-large model is deployed
+- Check TPM (tokens per minute) quota
+- Reduce batch size in `index_documents.py`
+- Implement retry logic with exponential backoff
+- Request quota increase if needed
 
-#### 5. Low Image Extraction Rate
+#### 4. Search Index Upload Fails (403 Forbidden)
 
 **Symptom:**
 ```
-Warning: Low image extraction rate: 2.5%
+RequestFailure: Failed to send batch - 403 Forbidden
 ```
 
 **Solutions:**
-- Check if PDFs contain images (not just text)
-- Verify DocumentExtractionSkill configuration
-- Check skillset imageAction parameter (should be "generateNormalizedImages")
+- Verify user has "Search Index Data Contributor" role
+- Wait 10-15 seconds after role assignment
+- Check search endpoint URL is correct
+- Verify index name matches deployed index
+- Confirm search service allows managed identity access
 
-#### 6. Timeout Waiting for Indexer
+#### 5. No Text Extracted from PDF
 
 **Symptom:**
 ```
-Timeout waiting for indexer (elapsed: 1800s)
+Extracted text from 0 pages
+Created 0 chunks
 ```
 
 **Solutions:**
-- Increase timeout: `--timeout 3600`
-- Check indexer isn't stuck: `az search indexer status`
-- Monitor Azure portal for resource throttling
-- Reset if needed: `--reset`
+- Verify PDF contains extractable text (not just scanned images)
+- OCR should work for scanned images - check Document Intelligence logs
+- Try different PDF file to isolate issue
+- Check if prebuilt-layout model is appropriate for document type
+- Verify Document Intelligence endpoint and authentication
 
-### Debug Sessions API
+#### 6. Chunk Count Unexpectedly Low/High
 
-For deep debugging of skillset enrichment:
-
-1. **Enable Debug Sessions** (in Azure Portal)
-   - Go to Search service → Skillset
-   - Enable "Save enrichments to debug session cache"
-
-2. **Inspect Enrichment Tree**
-   - View output of each skill
-   - Identify which skill is failing
-   - See intermediate data transformations
-
-3. **Fix and Test**
-   - Modify skillset configuration
-   - Re-run indexer
-   - Validate changes
-
-## Skillset Debugging
-
-### Understanding the Enrichment Pipeline
-
-The skillset processes documents in stages:
-
+**Symptom:**
 ```
-PDF Document
-    ↓
-DocumentExtractionSkill
-    ├─ Text content
-    └─ Normalized images (PNG)
-        ↓
-SplitSkill (Token-based chunking)
-    ├─ Chunk 1 (512 tokens)
-    ├─ Chunk 2 (512 tokens)
-    └─ ...
-        ↓
-AzureOpenAIEmbeddingSkill
-    └─ Vector embeddings (3072-dim)
+Created only 10 chunks from 200-page document
+OR
+Created 5000 chunks from 50-page document
 ```
 
-### Analyzing Errors by Skill
+**Solutions:**
+- Check chunk_size and chunk_overlap settings
+- Verify Document Intelligence extracted text correctly
+- Review actual text length from extraction
+- Adjust chunking parameters if needed
+- For very dense documents, increase chunk_size
+- For sparse documents, decrease chunk_size
 
-#### DocumentExtractionSkill Errors
+#### 7. Memory or Performance Issues
 
-**Common Issues:**
-- Corrupted PDF files
-- Password-protected PDFs
-- Unsupported PDF versions
-- Very large files (>100MB)
-
-**Debugging:**
-```bash
-# Check PDF validity
-pdfinfo data/manuals/problematic.pdf
-
-# Try manual extraction
-pdftotext data/manuals/problematic.pdf output.txt
+**Symptom:**
+```
+Process killed (OOM)
+OR
+Processing very slow (>1 hour for single PDF)
 ```
 
-#### SplitSkill Errors
+**Solutions:**
+- Reduce embedding batch size (default 100)
+- Process PDFs one at a time instead of all at once
+- Increase VM/container memory if running in cloud
+- Check for memory leaks in long-running processes
+- Monitor Azure service quotas and throttling
 
-**Common Issues:**
-- Text encoding problems
-- Very long documents exceeding limits
-- Special characters causing parsing issues
+## Debugging Tips
 
-**Debugging:**
-```bash
-# Check text content
-python -c "
-from indexing.validate_enrichment import EnrichmentValidator
-v = EnrichmentValidator()
-docs = v.get_indexed_documents()
-for doc in docs:
-    print(f\"Chunk length: {len(doc.get('content', ''))} chars\")
-"
+### Enable Verbose Logging
+
+Add logging to `index_documents.py`:
+
+```python
+import logging
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 ```
 
-#### EmbeddingSkill Errors
+### Test Individual Components
 
-**Common Issues:**
-- Azure OpenAI throttling (429 errors)
-- Quota exceeded
-- Empty text chunks
-- Text too long for embedding model
+Test each step independently:
 
-**Debugging:**
-```bash
-# Check Azure OpenAI metrics in Azure Portal
-# Monitor rate limits and quotas
+```python
+# Test Document Intelligence
+from azure.ai.documentintelligence import DocumentIntelligenceClient
+from azure.identity import DefaultAzureCredential
 
-# Verify embedding deployment exists
-az cognitiveservices account deployment list \
-  --name <openai-account> \
-  --resource-group <rg>
+client = DocumentIntelligenceClient(endpoint, DefaultAzureCredential())
+# Test with small PDF...
+
+# Test Embeddings
+from openai import AzureOpenAI
+client = AzureOpenAI(...)
+response = client.embeddings.create(
+    input=["test text"],
+    model="text-embedding-3-large"
+)
+print(len(response.data[0].embedding))  # Should be 3072
+
+# Test Search Upload
+from azure.search.documents import SearchClient
+client = SearchClient(...)
+result = client.upload_documents([{"chunk_id": "test", ...}])
+print(result)
 ```
 
-### Performance Optimization
+### Monitor Azure Resources
 
-**Reduce Indexer Run Time:**
+Check Azure Portal metrics:
+- Document Intelligence: Requests, errors, latency
+- Azure OpenAI: Token usage, rate limits, quotas
+- AI Search: Index size, query rate, document count
+- Storage: Blob operations, bandwidth
 
-1. **Batch Size**: Adjust indexer configuration
-2. **Parallel Processing**: Enable in skillset
-3. **Caching**: Enable skillset cache for incremental indexing
-4. **Resource Scaling**: Increase Azure AI Search tier
+### Review Logs
 
-**Monitor Performance:**
-```bash
-python src/indexing/monitor_skillset.py --output report.json
-
-# Analyze execution times
-cat report.json | jq '.execution_history[] | {start_time, end_time, items_processed}'
-```
+Check logs in various locations:
+- Application logs: `indexing.log`, `indexing_with_ocr.log`
+- Azure Monitor: Application Insights logs
+- Search service: Index and indexer logs (if diagnostics enabled)
+- Document Intelligence: Request logs in Azure Monitor
 
 ## Best Practices
 
 ### 1. Document Organization
 
-Organize PDFs by state and year:
+Organize PDFs by state and year in blob storage:
 ```
-data/manuals/
-  California/
-    2024/
-      dmv-handbook.pdf
-    2025/
-      dmv-handbook.pdf
-  Texas/
-    2024/
-      driver-handbook.pdf
+blob-storage/pdfs/
+  MI_DMV_2024.pdf
+  CA_DMV_2024.pdf
+  TX_Driver_Handbook_2025.pdf
 ```
+
+Use consistent naming: `{STATE}_{TITLE}_{YEAR}.pdf`
+
+### 2. Incremental Processing
+
+When adding new documents:
+1. Upload new PDFs to blob storage
+2. Run indexing pipeline - it processes all PDFs
+3. Existing chunks are updated (based on chunk_id)
+4. New chunks are added
+
+To reprocess specific documents:
+- Delete old chunks from index (filter by document_id)
+- Run pipeline - will create fresh chunks
+
+### 3. Configuration Management
+
+Keep configuration values in a separate config file or environment variables:
+
+```python
+# config.py or .env
+STORAGE_ACCOUNT = "stdrvagdbvxlqv"
+CONTAINER_NAME = "pdfs"
+DOCUMENT_INTELLIGENCE_ENDPOINT = "https://..."
+FOUNDRY_ENDPOINT = "https://..."
+SEARCH_ENDPOINT = "https://..."
+INDEX_NAME = "driving-manual-index"
+CHUNK_SIZE = 1000
+CHUNK_OVERLAP = 200
+EMBEDDING_BATCH_SIZE = 100
+```
+
+This makes it easier to:
+- Deploy to different environments (dev/prod)
+- Share configuration across team
+- Update parameters without code changes
+
+### 4. Error Handling and Logging
+
+The indexing pipeline logs detailed information:
+- Save logs for debugging: `python index_documents.py 2>&1 | tee indexing.log`
+- Review logs after failures
+- Monitor for warnings (may indicate issues)
+
+Common log messages to watch for:
+- "Failed to extract text" - Document Intelligence issues
+- "Error generating embeddings" - Azure OpenAI throttling
+- "Upload failed" - Search service issues
+
+### 5. Cost Optimization
+
+To minimize costs:
+- Process PDFs in batches (avoid frequent small runs)
+- Use appropriate chunk size (1000 chars balances quality/cost)
+- Monitor Document Intelligence and OpenAI usage
+- Consider using fewer embedding dimensions for large-scale deployments
+- Clean up unused indexes and old data
+
+### 6. Testing and Validation
+
+Before processing large batches:
+1. Test with a single small PDF
+2. Verify chunks are created correctly
+3. Check search results quality
+4. Review costs for single document
+5. Scale up gradually
+
+### 7. Monitoring and Maintenance
+
+Regularly check:
+- Search index statistics (document count)
+- Embedding quality (non-zero vectors)
+- Search relevance (sample queries)
+- Azure service health
+- Storage account usage
+
+### 8. Security Best Practices
+
+- Use managed identity authentication everywhere
+- Never commit API keys or connection strings
+- Implement RBAC with least privilege
+- Rotate credentials regularly
+- Monitor access logs for anomalies
+- Enable audit logging on storage and search
 
 ### 2. Metadata Strategy
 

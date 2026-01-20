@@ -45,11 +45,11 @@ The DrivingRules Agent is built using Azure AI Agent Framework v2 and implements
 ┌──────────────────────────────────────────────────────┐
 │          Azure AI Search Index                       │
 │  ┌────────────────────────────────────────────────┐  │
-│  │  Document Chunks (512 tokens, 100 overlap)     │  │
-│  │  - Chunk text                                  │  │
+│  │  Document Chunks (1000 chars, 200 overlap)     │  │
+│  │  - Chunk text (OCR-extracted via Doc Intel)   │  │
 │  │  - Vector embeddings (3072-dim)                │  │
 │  │  - Metadata (document, page, state)            │  │
-│  │  - Image references                            │  │
+│  │  - Figure captions from images                 │  │
 │  └────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────┘
           │

@@ -99,8 +99,8 @@ class SearchConfig(BaseModel):
     model_config = ConfigDict(extra='allow')
     
     index_name: str = Field(
-        default="driving-rules-hybrid",
-        description="Name of the Azure AI Search index"
+        default="driving-manual-index",
+        description="Name of the Azure AI Search index (contains character-based chunks)"
     )
     top_k: int = Field(
         default=5,

@@ -83,6 +83,9 @@ def create_search_tool(config: Optional[AgentConfig] = None) -> Dict[str, Any]:
     # In Agent Framework v2, the AzureAISearchTool is configured via
     # the agent's tools parameter. The exact format depends on the SDK version.
     # This configuration dictionary will be used when creating the agent.
+    # 
+    # Index contains character-based chunks (1000 chars, 200 overlap)
+    # extracted via Azure Document Intelligence with OCR support.
     search_tool_config = {
         "type": "azure_ai_search",
         "endpoint": config.search_endpoint,
