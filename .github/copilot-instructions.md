@@ -87,7 +87,7 @@ This guide provides essential instructions and best practices  for the DrivingMa
 
 - **OIDC Workload Identity**: Required for all deployment jobs, no stored secrets; setup documented in `docs/oidc-setup.md`
 - **GitHub environments**: `development` (no approval) & `production` (manual approval, secrets, cooldown)
-- **Rollback scripts**: `scripts/rollback-agent.sh`, `scripts/rollback-index.sh` (detailed comments on criteria and logic)
+- **Rollback scripts**: `scripts/rollback-agent.ps1`, `scripts/rollback-index.ps1` (detailed comments on criteria and logic)
 
 ---
 

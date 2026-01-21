@@ -468,3 +468,4 @@ Images:
 - [Azure AI Search Hybrid Search](https://learn.microsoft.com/azure/search/hybrid-search-overview)
 - [RAG Pattern Best Practices](https://learn.microsoft.com/azure/architecture/ai-ml/guide/rag/rag-solution-design-and-evaluation-guide)
 - [OpenTelemetry Python SDK](https://opentelemetry.io/docs/instrumentation/python/)
+

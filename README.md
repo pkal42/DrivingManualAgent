@@ -34,6 +34,85 @@ This project implements an intelligent agent that can answer questions about sta
    - Managed identity authentication (no keys)
    - RBAC-based security model
 
+## Infrastructure Deployment (Bicep)
+
+Execute the Bicep templates in this order to provision the Azure resources:
+
+1. Authenticate and set defaults
+
+   ```powershell
+   az login
+   az account set --subscription <subscription-id>
+   cd infra/bicep
+   ```
+2. Validate templates locally to catch syntax errors early
+
+   ```powershell
+   az bicep build --file main.bicep
+   az bicep build --file modules/search-skillset.bicep
+   az bicep build --file modules/search-index.bicep
+   az bicep build --file modules/search-datasource.bicep
+   az bicep build --file modules/search-indexer.bicep
+   ```
+3. Preview the subscription-level deployment (optional but recommended)
+
+   ```powershell
+   az deployment sub what-if `
+     --location eastus2 `
+     --template-file main.bicep `
+     --parameters parameters/dev.bicepparam
+   ```
+4. Deploy the full environment with the main orchestrator (assign a deployment name so you can reuse its outputs)
+
+   ```powershell
+   az deployment sub create `
+     --location eastus2 `
+     --name driving-manual-main `
+     --template-file main.bicep `
+     --parameters parameters/dev.bicepparam
+   ```
+5. Retrieve the resource group created by the main deployment (you will use it in subsequent commands)
+
+   ```powershell
+   az deployment sub show `
+     --name driving-manual-main `
+     --query properties.outputs.resourceGroupName.value -o tsv
+   ```
+6. Deploy the search components (index, skillset, datasource, indexer) using the PowerShell script
+
+   ```powershell
+   # Get the search service name from deployment outputs
+   $searchService = az deployment sub show `
+     --name driving-manual-main `
+     --query properties.outputs.searchServiceName.value -o tsv
+
+   # Deploy all search components via REST API
+   .\ deploy-search-components.ps1 -SearchServiceName $searchService
+   ```
+
+   This script uses Azure Search REST API to deploy:
+   - **Index**: `driving-manual-index` with vector search and semantic ranking
+   - **Skillset**: Document extraction, text splitting, and embedding generation
+   - **Data Source**: Blob storage connection with managed identity
+   - **Indexer**: Orchestrates the enrichment pipeline
+7. Upload PDF documents to blob storage for indexing
+
+   ```powershell
+   # Get the storage account name from deployment outputs
+   $storageAccount = az deployment sub show `
+     --name driving-manual-main `
+     --query properties.outputs.storageAccountName.value -o tsv
+
+   # Upload PDFs from local directory
+   az storage blob upload-batch `
+     -d pdfs `
+     -s data/manuals `
+     --account-name $storageAccount `
+     --auth-mode login
+   ```
+
+   The indexer will automatically process uploaded documents through the enrichment pipeline.
+
 ## Quick Start
 
 ### Prerequisites
@@ -45,12 +124,10 @@ This project implements an intelligent agent that can answer questions about sta
 
 ### 1. Install Dependencies
 
-```bash
+```powershell
 # Create and activate virtual environment
-cd src/indexing
 python -m venv .venv
-.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # Linux/Mac
+.venv\Scripts\Activate.ps1
 
 # Install required packages
 pip install -r ../../requirements.txt
@@ -60,11 +137,11 @@ pip install -r ../../requirements.txt
 
 Upload driving manual PDFs to the Azure Blob Storage container:
 
-```bash
-az storage blob upload-batch \
-  -d pdfs \
-  -s data/manuals \
-  --account-name <storage-account> \
+```powershell
+az storage blob upload-batch `
+  -d pdfs `
+  -s data/manuals `
+  --account-name <storage-account> `
   --auth-mode login
 ```
 
@@ -72,7 +149,7 @@ az storage blob upload-batch \
 
 The indexing pipeline processes PDFs using Azure Document Intelligence OCR and uploads chunks to Azure AI Search:
 
-```bash
+```powershell
 cd src/indexing
 python index_documents.py
 ```
@@ -88,11 +165,11 @@ The pipeline will:
 
 Check that documents were successfully indexed:
 
-```bash
+```powershell
 # Query the search index
-az search index show-statistics \
-  --index-name driving-manual-index \
-  --service-name <search-service> \
+az search index show-statistics `
+  --index-name driving-manual-index `
+  --service-name <search-service> `
   --resource-group <rg-name>
 ```
 
@@ -189,11 +266,10 @@ az search index show-statistics \
 
 ### Running the Indexing Pipeline
 
-```bash
+```powershell
 # Activate virtual environment
 cd src/indexing
-.venv\Scripts\activate  # Windows
-# source .venv/bin/activate  # Linux/Mac
+.venv\Scripts\Activate.ps1
 
 # Run indexing for all PDFs in blob storage
 python index_documents.py
@@ -225,7 +301,7 @@ Edit `index_documents.py` to customize:
 
 ### Generating Sample PDFs
 
-```bash
+```powershell
 cd src/indexing
 python generate_test_pdfs.py --output-dir ../../data/manuals
 ```

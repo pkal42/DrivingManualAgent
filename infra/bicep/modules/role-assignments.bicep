@@ -42,6 +42,9 @@ param storageAccountName string
 @description('Name of the search service')
 param searchServiceName string
 
+@description('Name of the Cognitive Services (Foundry) account')
+param cognitiveServicesAccountName string
+
 // ============================================================================
 // Existing Resources
 // ============================================================================
@@ -54,6 +57,11 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' existing 
 // Reference existing search service
 resource searchService 'Microsoft.Search/searchServices@2023-11-01' existing = {
   name: searchServiceName
+}
+
+// Reference existing cognitive services account
+resource cognitiveServicesAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' existing = {
+  name: cognitiveServicesAccountName
 }
 
 var searchServicePrincipalId = searchService.identity.principalId
@@ -80,6 +88,10 @@ var searchIndexDataContributorRoleId = '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
 // Permissions: Manage search service, but not access data
 // Useful for administrative tasks
 var searchServiceContributorRoleId = '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
+
+// Cognitive Services OpenAI User role
+// Permissions: Read access to Azure OpenAI resources
+var cognitiveServicesOpenAIUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 
 // ============================================================================
 // Role Assignment: AI Project → Storage Account
@@ -131,6 +143,23 @@ resource searchStorageContributorRoleAssignment 'Microsoft.Authorization/roleAss
     principalId: searchServicePrincipalId
     principalType: 'ServicePrincipal'
     description: 'Grants Azure AI Search permission to manage blob metadata for change detection'
+  }
+}
+
+// ============================================================================
+// Role Assignment: Search Service → Cognitive Services (OpenAI)
+// ============================================================================
+
+// Grant the search service managed identity access to the Cognitive Services (Foundry)
+// account to invoke OpenAI embeddings during indexing (Integrated Vectorization).
+resource searchOpenAIRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(cognitiveServicesAccount.id, searchService.id, cognitiveServicesOpenAIUserRoleId)
+  scope: cognitiveServicesAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesOpenAIUserRoleId)
+    principalId: searchServicePrincipalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Search Service access to Azure OpenAI for embedding generation'
   }
 }
 

@@ -83,7 +83,7 @@ The document ingestion pipeline automates the process of:
    - Proper RBAC permissions configured
 
 2. **Environment Setup**
-   ```bash
+   ```powershell
    cd src/indexing
    python -m venv .venv
    .venv\Scripts\activate  # Windows
@@ -93,7 +93,7 @@ The document ingestion pipeline automates the process of:
 
 3. **Authentication**
    Ensure you're authenticated with Azure CLI:
-   ```bash
+   ```powershell
    az login
    az account set --subscription <subscription-id>
    ```
@@ -102,30 +102,21 @@ The document ingestion pipeline automates the process of:
 
 Upload PDFs manually using Azure CLI:
 
-```bash
-az storage blob upload-batch \
-  -d pdfs \
-  -s data/manuals \
-  --account-name <storage-account> \
-  --auth-mode login
+```powershell
+az storage blob upload-batch ` `n  -d pdfs ` `n  -s data/manuals ` `n  --account-name <storage-account> ` `n  --auth-mode login
 ```
 
 Or upload a single file:
 
-```bash
-az storage blob upload \
-  -f data/manuals/MI_DMV_2024.pdf \
-  -c pdfs \
-  -n MI_DMV_2024.pdf \
-  --account-name <storage-account> \
-  --auth-mode login
+```powershell
+az storage blob upload ` `n  -f data/manuals/MI_DMV_2024.pdf ` `n  -c pdfs ` `n  -n MI_DMV_2024.pdf ` `n  --account-name <storage-account> ` `n  --auth-mode login
 ```
 
 ### Step 2: Run Python Indexing Pipeline
 
 Execute the indexing script to process all PDFs:
 
-```bash
+```powershell
 cd src/indexing
 python index_documents.py
 ```
@@ -183,22 +174,14 @@ Indexing pipeline completed successfully!
 
 Check that documents were indexed:
 
-```bash
-az search index show-statistics \
-  --index-name driving-manual-index \
-  --service-name <search-service> \
-  --resource-group <rg-name>
+```powershell
+az search index show-statistics ` `n  --index-name driving-manual-index ` `n  --service-name <search-service> ` `n  --resource-group <rg-name>
 ```
 
 Query the index to verify:
 
-```bash
-az search index search \
-  --index-name driving-manual-index \
-  --service-name <search-service> \
-  --search-text "stop sign" \
-  --query-type simple \
-  --top 3
+```powershell
+az search index search ` `n  --index-name driving-manual-index ` `n  --service-name <search-service> ` `n  --search-text "stop sign" ` `n  --query-type simple ` `n  --top 3
 ```
 
 ## Automated Ingestion
@@ -250,12 +233,8 @@ After running the indexing pipeline, verify results:
 #### 1. Document Count
 Check that all PDFs were processed:
 
-```bash
-az search index show-statistics \
-  --index-name driving-manual-index \
-  --service-name <search-service> \
-  --resource-group <rg-name> \
-  --query 'documentCount'
+```powershell
+az search index show-statistics ` `n  --index-name driving-manual-index ` `n  --service-name <search-service> ` `n  --resource-group <rg-name> ` `n  --query 'documentCount'
 ```
 
 Expected: Number of chunks (e.g., 286 for MI_DMV_2024.pdf)
@@ -263,13 +242,8 @@ Expected: Number of chunks (e.g., 286 for MI_DMV_2024.pdf)
 #### 2. Search Functionality
 Test hybrid search:
 
-```bash
-az search index search \
-  --index-name driving-manual-index \
-  --service-name <search-service> \
-  --search-text "stop sign" \
-  --query-type semantic \
-  --top 5
+```powershell
+az search index search ` `n  --index-name driving-manual-index ` `n  --service-name <search-service> ` `n  --search-text "stop sign" ` `n  --query-type semantic ` `n  --top 5
 ```
 
 Verify results include relevant chunks with proper metadata.
@@ -583,12 +557,8 @@ Regularly check:
 ### 2. Metadata Strategy
 
 Include rich metadata:
-```bash
-python src/indexing/upload_documents.py \
-  --file manual.pdf \
-  --state California \
-  --year 2024 \
-  --version 2.0
+```powershell
+python src/indexing/upload_documents.py ` `n  --file manual.pdf ` `n  --state California ` `n  --year 2024 ` `n  --version 2.0
 ```
 
 Metadata enables:
@@ -599,11 +569,9 @@ Metadata enables:
 ### 3. Incremental Updates
 
 For updates, only upload changed files:
-```bash
+```powershell
 # Upload only new/modified PDFs
-python src/indexing/upload_documents.py \
-  --directory data/manuals \
-  --recursive
+python src/indexing/upload_documents.py ` `n  --directory data/manuals ` `n  --recursive
   # Note: No --overwrite flag (skip existing)
 
 # Trigger incremental indexing (don't reset)
@@ -619,7 +587,7 @@ python src/indexing/trigger_indexer.py --wait
 ### 5. Error Handling
 
 Set up monitoring:
-```bash
+```powershell
 # Cron job for daily validation
 0 2 * * * python src/indexing/validate_enrichment.py --json-output /logs/validation-$(date +\%Y\%m\%d).json
 ```
@@ -645,11 +613,9 @@ Minimize costs:
 
 ### Example 1: Upload California Manual
 
-```bash
+```powershell
 # Upload with automatic metadata extraction
-python src/indexing/upload_documents.py \
-  --file data/manuals/California/2024/dmv-handbook.pdf \
-  --verbose
+python src/indexing/upload_documents.py ` `n  --file data/manuals/California/2024/dmv-handbook.pdf ` `n  --verbose
 
 # Output:
 # Uploading data/manuals/California/2024/dmv-handbook.pdf -> California/2024/dmv-handbook.pdf
@@ -659,25 +625,20 @@ python src/indexing/upload_documents.py \
 
 ### Example 2: Batch Upload and Index
 
-```bash
+```powershell
 # Upload all PDFs
-python src/indexing/upload_documents.py \
-  --directory data/manuals \
-  --recursive \
-  --overwrite
+python src/indexing/upload_documents.py ` `n  --directory data/manuals ` `n  --recursive ` `n  --overwrite
 
 # Trigger indexer and wait
 python src/indexing/trigger_indexer.py --wait --timeout 3600
 
 # Validate results
-python src/indexing/validate_enrichment.py \
-  --json-output validation.json \
-  --markdown-output validation.md
+python src/indexing/validate_enrichment.py ` `n  --json-output validation.json ` `n  --markdown-output validation.md
 ```
 
 ### Example 3: Debug Failed Indexer
 
-```bash
+```powershell
 # 1. Check indexer status
 python src/indexing/trigger_indexer.py --status-only
 
@@ -720,3 +681,4 @@ For issues or questions:
 - [Debug Sessions](https://learn.microsoft.com/azure/search/cognitive-search-debug-session)
 - [Repository README](../README.md)
 - [Infrastructure Guide](../infra/bicep/README.md)
+

@@ -109,15 +109,15 @@ Environment variables override both base and profile settings, useful for:
 
 Set the `CONFIG_PROFILE` environment variable:
 
-```bash
+```powershell
 # Use base profile (default)
-export CONFIG_PROFILE=base
+$env:CONFIG_PROFILE = base
 
 # Use cost-optimized profile
-export CONFIG_PROFILE=cost-optimized
+$env:CONFIG_PROFILE = cost-optimized
 
 # Use performance-optimized profile
-export CONFIG_PROFILE=performance-optimized
+$env:CONFIG_PROFILE = performance-optimized
 ```
 
 Or pass the profile when loading configuration in code:
@@ -147,7 +147,7 @@ config = load_config(profile="cost-optimized")
 
 These must be set for the agent to function:
 
-```bash
+```powershell
 # Azure AI Foundry project endpoint
 AZURE_AI_PROJECT_ENDPOINT=https://your-project.api.azureml.ms
 
@@ -161,7 +161,7 @@ AZURE_SEARCH_ENDPOINT=https://your-search.search.windows.net
 
 Override which model deployments to use:
 
-```bash
+```powershell
 # Chat model (must be deployed in Azure AI Foundry)
 CHAT_MODEL_DEPLOYMENT=gpt-4o
 
@@ -176,7 +176,7 @@ VISION_MODEL_DEPLOYMENT=gpt-4o
 
 Fine-tune model behavior:
 
-```bash
+```powershell
 # Temperature (0.0-1.0, higher = more creative)
 AGENT_TEMPERATURE=0.7
 
@@ -188,7 +188,7 @@ AGENT_MAX_TOKENS=4000
 
 Control search behavior:
 
-```bash
+```powershell
 # Search index name
 AZURE_SEARCH_INDEX=driving-rules-hybrid
 
@@ -206,7 +206,7 @@ ENABLE_HYBRID_SEARCH=true
 
 Control image inclusion:
 
-```bash
+```powershell
 # Relevance threshold (0.0-1.0)
 IMAGE_RELEVANCE_THRESHOLD=0.75
 
@@ -219,7 +219,7 @@ ENABLE_LLM_JUDGE=false
 
 #### Runtime Settings
 
-```bash
+```powershell
 # Enable streaming responses
 ENABLE_STREAMING=true
 
@@ -232,7 +232,7 @@ USE_MANAGED_IDENTITY=true
 
 #### Storage Settings
 
-```bash
+```powershell
 # Storage account for images
 AZURE_STORAGE_ACCOUNT=your-storage-account
 
@@ -247,7 +247,7 @@ AZURE_STORAGE_CONTAINER_IMAGES=extracted-images
 **Goal**: Quick testing and debugging without high Azure costs.
 
 **Configuration**:
-```bash
+```powershell
 CONFIG_PROFILE=cost-optimized
 ENABLE_STREAMING=true
 ENABLE_TELEMETRY=false
@@ -267,7 +267,7 @@ SEARCH_TOP_K=1  # Minimal for fast testing
 **Goal**: Test with production-like configuration before deploying.
 
 **Configuration**:
-```bash
+```powershell
 CONFIG_PROFILE=base
 ENABLE_TELEMETRY=true
 APPLICATIONINSIGHTS_CONNECTION_STRING=...
@@ -286,7 +286,7 @@ ENVIRONMENT=staging
 **Goal**: Serve production traffic with minimal Azure costs.
 
 **Configuration**:
-```bash
+```powershell
 CONFIG_PROFILE=cost-optimized
 ENABLE_TELEMETRY=true
 ENABLE_STREAMING=true
@@ -307,7 +307,7 @@ ENVIRONMENT=production
 **Goal**: Highest quality responses for critical applications.
 
 **Configuration**:
-```bash
+```powershell
 CONFIG_PROFILE=performance-optimized
 ENABLE_TELEMETRY=true
 ENABLE_STREAMING=true
@@ -329,7 +329,7 @@ ENVIRONMENT=production
 **Goal**: Demonstrate the system's full potential.
 
 **Configuration**:
-```bash
+```powershell
 CONFIG_PROFILE=performance-optimized
 SEARCH_TOP_K=15  # Extra comprehensive
 ENABLE_LLM_JUDGE=true
@@ -350,7 +350,7 @@ ENABLE_STREAMING=true
 **Goal**: Custom balance of cost and performance.
 
 **Configuration**:
-```bash
+```powershell
 CONFIG_PROFILE=base
 CHAT_MODEL_DEPLOYMENT=gpt-4.1  # Upgrade chat model
 SEARCH_TOP_K=8  # More results than base
@@ -370,7 +370,7 @@ You can create custom configuration profiles for specific use cases.
 
 Create a new JSON file in the `config/` directory:
 
-```bash
+```powershell
 config/my-custom-profile.json
 ```
 
@@ -406,7 +406,7 @@ Add only the settings you want to override from base:
 
 Load the custom profile:
 
-```bash
+```powershell
 CONFIG_PROFILE=my-custom-profile
 ```
 
@@ -486,7 +486,7 @@ config = load_config(profile="my-custom-profile")
 
 Always validate configuration before deploying:
 
-```bash
+```powershell
 # Validate all profiles
 python scripts/validate_config.py --all
 
@@ -503,20 +503,20 @@ python scripts/validate_config.py --all --summary
 
 Test configuration loading without deploying:
 
-```bash
+```powershell
 # Set required env vars
-export AZURE_AI_PROJECT_ENDPOINT=https://test.api.azureml.ms
-export AZURE_SEARCH_ENDPOINT=https://test.search.windows.net
+$env:AZURE_AI_PROJECT_ENDPOINT = https://test.api.azureml.ms
+$env:AZURE_SEARCH_ENDPOINT = https://test.search.windows.net
 
 # Test with different profiles
-export CONFIG_PROFILE=base
+$env:CONFIG_PROFILE = base
 python src/agent/config_loader.py
 
-export CONFIG_PROFILE=cost-optimized
+$env:CONFIG_PROFILE = cost-optimized
 python src/agent/config_loader.py
 
 # Test with env var overrides
-export SEARCH_TOP_K=15
+$env:SEARCH_TOP_K = 15
 python src/agent/config_loader.py
 ```
 
@@ -538,7 +538,7 @@ python src/agent/config_loader.py
 
 Run validation after any configuration change:
 
-```bash
+```powershell
 python scripts/validate_config.py
 ```
 
@@ -579,3 +579,4 @@ For configuration issues:
 3. Review error messages carefully (they include suggestions)
 4. Check environment variables are set correctly
 5. Open an issue with configuration details (without secrets!)
+

@@ -5,7 +5,7 @@
 //
 // Usage:
 //   az deployment sub create \
-//     --location eastus \
+//     --location eastus2 \
 //     --template-file main.bicep \
 //     --parameters parameters/prod.bicepparam
 // ============================================================================
@@ -14,7 +14,7 @@ using '../main.bicep'
 
 // Environment Configuration
 param environmentName = 'prod'
-param location = 'eastus'
+param location = 'eastus2'
 param projectName = 'drvagent'
 
 // Azure AI Search Configuration

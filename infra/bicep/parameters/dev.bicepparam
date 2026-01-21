@@ -5,7 +5,7 @@
 // 
 // Usage:
 //   az deployment sub create \
-//     --location eastus \
+//     --location eastus2 \
 //     --template-file main.bicep \
 //     --parameters parameters/dev.bicepparam
 // ============================================================================
@@ -14,8 +14,8 @@ using '../main.bicep'
 
 // Environment Configuration
 param environmentName = 'dev'
-param location = 'eastus'
-param projectName = 'drvagent'
+param location = 'eastus2'
+param projectName = 'drvagnt2'
 
 // Azure AI Search Configuration
 // Basic tier is sufficient for development and testing

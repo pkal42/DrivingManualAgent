@@ -29,7 +29,7 @@ All modules include comprehensive inline comments explaining:
    - Soft delete detection
 
 4. **search-indexer.bicep** - Indexer orchestration
-   - Data source → Skillset → Index flow
+  - Data source -> Skillset -> Index flow
    - Field mappings and output mappings
    - Error handling and scheduling
 
@@ -37,70 +37,76 @@ All modules include comprehensive inline comments explaining:
 
 - Azure subscription
 - Azure CLI (`az` command)
-- Existing resources from Issue #1:
-  - Azure AI Search service
-  - Azure Storage account with `pdfs` container
-  - Azure OpenAI service with deployments
+- Permission to deploy subscription-scoped resources (resource group, Microsoft Foundry project, Azure AI Search, Storage)
+- Quota for Azure OpenAI (Microsoft Foundry) model deployments referenced in `modules/model-deployments.bicep`
 
 ## Deployment
 
-### Individual Module Deployment
+### Full Environment Deployment
 
-Deploy each module separately for granular control:
+Use the subscription-scoped orchestrator to create the resource group, Foundry project, Azure AI Search, storage, and RBAC wiring in a single pass.
 
-```bash
-# 1. Deploy skillset
-az deployment group create \
-  --resource-group <rg-name> \
-  --template-file modules/search-skillset.bicep \
-  --parameters searchServiceName=<search-service> \
-               openAiEndpoint=https://<openai>.openai.azure.com \
-               embeddingDeploymentName=text-embedding-3-large \
-               visionDeploymentName=gpt-4o
+```powershell
+# Optional preview (what-if)
+az deployment sub what-if `
+  --location eastus2 `
+  --template-file main.bicep `
+  --parameters parameters/dev.bicepparam
 
-# 2. Deploy index
-az deployment group create \
-  --resource-group <rg-name> \
-  --template-file modules/search-index.bicep \
-  --parameters searchServiceName=<search-service> \
-               indexName=driving-manual-index \
-               vectorDimensions=3072
+# Deploy and name the run so you can query outputs later
+az deployment sub create `
+  --location eastus2 `
+  --name driving-manual-main `
+  --template-file main.bicep `
+  --parameters parameters/dev.bicepparam
 
-# 3. Deploy data source
-az deployment group create \
-  --resource-group <rg-name> \
-  --template-file modules/search-datasource.bicep \
-  --parameters searchServiceName=<search-service> \
-               storageAccountName=<storage-account> \
-               containerName=pdfs
-
-# 4. Deploy indexer
-az deployment group create \
-  --resource-group <rg-name> \
-  --template-file modules/search-indexer.bicep \
-  --parameters searchServiceName=<search-service> \
-               dataSourceName=driving-manual-datasource \
-               skillsetName=driving-manual-skillset \
-               indexName=driving-manual-index
+# Retrieve the resource group emitted by the deployment
+az deployment sub show `
+  --name driving-manual-main `
+  --query properties.outputs.resourceGroupName.value -o tsv
 ```
+
+### Search Components Deployment (PowerShell REST API)
+
+After the core infrastructure is deployed, use the PowerShell script to deploy search components via REST API. Bicep doesn't fully support Azure AI Search skillsets/indexes yet, so we use the REST API directly.
+
+```powershell
+# Get search service name from deployment
+$searchService = az deployment sub show `
+  --name driving-manual-main `
+  --query properties.outputs.searchServiceName.value -o tsv
+
+# Deploy all search components (index, skillset, datasource, indexer)
+.\deploy-search-components.ps1 -SearchServiceName $searchService
+```
+
+The script deploys:
+- **Index**: `driving-manual-index` with vector search (3072 dimensions) and semantic ranking
+- **Skillset**: Document extraction → text chunking → embedding generation pipeline
+- **Data Source**: Blob storage connection with managed identity authentication
+- **Indexer**: Orchestrates document processing through the enrichment pipeline
+
+REST API JSON templates are located in `modules/rest-*.json`.
 
 ### Validation
 
 Validate Bicep templates before deployment:
 
-```bash
-# Validate syntax
-az bicep build --file modules/search-skillset.bicep
-az bicep build --file modules/search-index.bicep
-az bicep build --file modules/search-datasource.bicep
-az bicep build --file modules/search-indexer.bicep
+```powershell
+# Validate core infrastructure syntax
+az bicep build --file main.bicep
+az bicep build --file modules/foundry-project.bicep
+az bicep build --file modules/ai-search.bicep
+az bicep build --file modules/storage.bicep
 
 # Preview changes (what-if)
-az deployment group what-if \
-  --resource-group <rg-name> \
-  --template-file modules/search-skillset.bicep \
-  --parameters searchServiceName=<search-service> ...
+az deployment sub what-if `
+  --location eastus2 `
+  --template-file main.bicep `
+  --parameters parameters/dev.bicepparam
 ```
+
+**Note**: Search components (skillset, index, datasource, indexer) are deployed via PowerShell REST API script, not Bicep.
 
 ## Configuration
 
@@ -110,7 +116,7 @@ Each module accepts parameters for customization. See inline comments in each mo
 
 **Common Parameters:**
 - `searchServiceName`: Azure AI Search service name (required)
-- `openAiEndpoint`: Azure OpenAI endpoint URL (required for skillset)
+- `foundryEndpoint`: Microsoft Foundry endpoint URL (required for skillset)
 - `storageAccountName`: Storage account name (required for data source)
 
 **Optional Parameters:**
@@ -137,23 +143,23 @@ All modules use managed identity for authentication:
 
 ### Required RBAC Roles
 
-```bash
+```powershell
 # Get search service principal ID
-SEARCH_PRINCIPAL_ID=$(az search service show \
-  --name <search-service> \
-  --resource-group <rg-name> \
-  --query identity.principalId -o tsv)
+$searchPrincipalId = az search service show `
+  --name <search-service> `
+  --resource-group <rg-name> `
+  --query identity.principalId -o tsv
 
 # Grant storage access
-az role assignment create \
-  --assignee $SEARCH_PRINCIPAL_ID \
-  --role "Storage Blob Data Contributor" \
+az role assignment create `
+  --assignee $searchPrincipalId `
+  --role "Storage Blob Data Contributor" `
   --scope /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<storage>
 
 # Grant Azure OpenAI access
-az role assignment create \
-  --assignee $SEARCH_PRINCIPAL_ID \
-  --role "Cognitive Services User" \
+az role assignment create `
+  --assignee $searchPrincipalId `
+  --role "Cognitive Services User" `
   --scope /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.CognitiveServices/accounts/<openai>
 ```
 

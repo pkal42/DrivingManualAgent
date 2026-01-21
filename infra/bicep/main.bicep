@@ -10,7 +10,7 @@
 //
 // Usage:
 //   az deployment sub create \
-//     --location eastus \
+//     --location eastus2 \
 //     --template-file main.bicep \
 //     --parameters parameters/dev.bicepparam
 // ============================================================================
@@ -29,7 +29,7 @@ targetScope = 'subscription'
 param environmentName string
 
 @description('Primary Azure region for resource deployment.')
-param location string = 'eastus'
+param location string = 'eastus2'
 
 @description('Project name prefix. Used to ensure globally unique resource names.')
 @minLength(3)
@@ -161,6 +161,7 @@ module roleAssignments 'modules/role-assignments.bicep' = {
     aiProjectPrincipalId: foundryProject.outputs.projectPrincipalId
     storageAccountName: storage.outputs.storageAccountName
     searchServiceName: aiSearch.outputs.searchServiceName
+    cognitiveServicesAccountName: foundryProject.outputs.foundryAccountName
   }
 }
 
@@ -202,4 +203,4 @@ output gpt4oDeploymentName string = modelDeployments.outputs.gpt4oDeploymentName
 output gpt41DeploymentName string = modelDeployments.outputs.gpt41DeploymentName
 
 @description('Text-embedding-3-large model deployment name')
-output embeddingDeploymentName string = modelDeployments.outputs.embeddingDeploymentName
+output embeddingDeploymentName string = modelDeployments.outputs.foundryEmbeddingDeploymentName

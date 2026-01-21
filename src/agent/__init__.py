@@ -94,17 +94,17 @@ The agent follows a modular RAG (Retrieval-Augmented Generation) architecture:
 ## Testing
 
 Run unit tests:
-```bash
+```powershell
 pytest tests/agent/
 ```
 
 Run integration tests:
-```bash
+```powershell
 pytest tests/agent/test_integration.py
 ```
 
 Test CLI:
-```bash
+```powershell
 python -m agent.app "What does a stop sign mean?"
 ```
 

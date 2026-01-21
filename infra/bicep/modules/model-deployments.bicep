@@ -53,7 +53,7 @@ param gpt41Capacity int = 50
 
 // Deployment names - these are used in code to reference the models
 var gpt4oDeploymentName = 'gpt-4o'
-var embeddingDeploymentName = 'text-embedding-3-large'
+var foundryEmbeddingDeploymentName = 'text-embedding-3-large'
 var gpt41DeploymentName = 'gpt-4.1'
 
 // Model versions - update these when newer versions are available
@@ -155,7 +155,7 @@ resource gpt41Deployment 'Microsoft.CognitiveServices/accounts/deployments@2024-
 // - 100K TPM: Sufficient for indexing ~1000 pages/minute
 // - Can be lower in production if re-indexing is infrequent
 resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
-  name: embeddingDeploymentName
+  name: foundryEmbeddingDeploymentName
   parent: foundryAccount
   sku: {
     name: standardSku
@@ -200,7 +200,7 @@ output gpt41ModelVersion string = gpt41ModelVersion
 output gpt41Capacity int = gpt41Capacity
 
 @description('Text-embedding-3-large deployment name for use in application code')
-output embeddingDeploymentName string = embeddingDeployment.name
+output foundryEmbeddingDeploymentName string = embeddingDeployment.name
 
 @description('Text-embedding model version deployed')
 output embeddingModelVersion string = embeddingModelVersion

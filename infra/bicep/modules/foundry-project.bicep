@@ -121,6 +121,3 @@ output projectDisplayName string = projectDisplayName
 // the earlier output contract. These map directly to the new Foundry resources.
 @description('Legacy alias: Azure OpenAI service name (maps to Foundry account)')
 output openAIName string = aiFoundry.name
-
-@description('Legacy alias: Azure OpenAI endpoint (maps to Foundry endpoint)')
-output openAIEndpoint string = aiFoundry.properties.endpoint

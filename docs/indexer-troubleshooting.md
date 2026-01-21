@@ -43,13 +43,9 @@ Use Debug Sessions when:
 
 #### Method 2: REST API
 
-```bash
+```powershell
 # Create a debug session via REST API
-curl -X PUT \
-  "https://<search-service>.search.windows.net/debug/sessions/<session-id>?api-version=2024-05-01-preview" \
-  -H "api-key: <admin-api-key>" \
-  -H "Content-Type: application/json" \
-  -d '{
+curl -X PUT ` `n  "https://<search-service>.search.windows.net/debug/sessions/<session-id>?api-version=2024-05-01-preview" ` `n  -H "api-key: <admin-api-key>" ` `n  -H "Content-Type: application/json" ` `n  -d '{
     "description": "Debug session for driving manual indexer",
     "indexer": "driving-manual-indexer",
     "documentId": "<document-id>",
@@ -122,12 +118,9 @@ Once the session is created:
 
 ### View Indexer Status
 
-```bash
+```powershell
 # Get indexer status
-az search indexer status \
-  --name driving-manual-indexer \
-  --service-name <search-service> \
-  --resource-group <rg-name>
+az search indexer status ` `n  --name driving-manual-indexer ` `n  --service-name <search-service> ` `n  --resource-group <rg-name>
 ```
 
 **Output includes:**
@@ -146,16 +139,10 @@ az search indexer status \
 **Solution**:
 1. Verify `allowSkillsetToReadFileData: true` in indexer
 2. Grant "Storage Blob Data Reader" role:
-   ```bash
-   SEARCH_PRINCIPAL_ID=$(az search service show \
-     --name <search-service> \
-     --resource-group <rg-name> \
-     --query identity.principalId -o tsv)
+   ```powershell
+   $searchPrincipalId = $(az search service show ` `n  --name <search-service> ` `n  --resource-group <rg-name> ` `n  --query identity.principalId -o tsv)
    
-   az role assignment create \
-     --assignee $SEARCH_PRINCIPAL_ID \
-     --role "Storage Blob Data Reader" \
-     --scope /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<storage>
+   az role assignment create ` `n  --assignee \$searchPrincipalId ` `n  --role "Storage Blob Data Reader" ` `n  --scope /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Storage/storageAccounts/<storage>
    ```
 
 #### Error: "Skill execution failed: AzureOpenAIEmbeddingSkill"
@@ -227,17 +214,15 @@ AzureDiagnostics
 
 Use the validation script to check indexer health:
 
-```bash
+```powershell
 cd src/indexing
 
 # Install dependencies
 pip install azure-search-documents azure-identity
 
 # Run validation
-export AZURE_SEARCH_ENDPOINT=https://<search-service>.search.windows.net
-python validate_indexer.py \
-  --skillset-name driving-manual-skillset \
-  --indexer-name driving-manual-indexer
+$env:AZURE_SEARCH_ENDPOINT = https://<search-service>.search.windows.net
+python validate_indexer.py ` `n  --skillset-name driving-manual-skillset ` `n  --indexer-name driving-manual-indexer
 ```
 
 **Validation checks:**
@@ -253,7 +238,7 @@ python validate_indexer.py \
 ### Workflow 1: No Documents Indexed
 
 1. **Check indexer status**:
-   ```bash
+   ```powershell
    az search indexer status --name driving-manual-indexer --service-name <search> --resource-group <rg>
    ```
 
@@ -267,7 +252,7 @@ python validate_indexer.py \
    - Verify role assignment scope (storage account level)
 
 4. **Run indexer manually**:
-   ```bash
+   ```powershell
    az search indexer run --name driving-manual-indexer --service-name <search> --resource-group <rg>
    ```
 
@@ -324,3 +309,4 @@ python validate_indexer.py \
 - [Skillset Execution Errors](https://learn.microsoft.com/azure/search/cognitive-search-common-errors-warnings)
 - [Indexer Error Reference](https://learn.microsoft.com/azure/search/search-indexer-error-codes)
 - [Monitoring Azure AI Search](https://learn.microsoft.com/azure/search/monitor-azure-cognitive-search)
+
