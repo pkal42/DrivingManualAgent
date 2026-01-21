@@ -30,6 +30,7 @@ Requirements:
 
 import argparse
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -99,19 +100,19 @@ API_VERSION = "2025-09-01"
 
 # Default configuration values
 DEFAULT_CONFIG = {
-    "subscription_id": "0367ae6b-bbd6-429d-a6e9-7019fb08ff08",
-    "resource_group": "rg-drvagnt2-dev-eastus2",
-    "search_service": "srch-drvagnt2-dev-7vczbz",
-    "search_service_name": "srch-drvagnt2-dev-7vczbz",
-    "index_name": "driving-manual-index",
-    "skillset_name": "driving-manual-skillset",
-    "datasource_name": "driving-manual-datasource",
-    "indexer_name": "driving-manual-indexer",
-    "storage_account": "stdrvagd7vczbz",
-    "storage_container": "pdfs",
-    "storage_resource_id": "/subscriptions/0367ae6b-bbd6-429d-a6e9-7019fb08ff08/resourceGroups/rg-drvagnt2-dev-eastus2/providers/Microsoft.Storage/storageAccounts/stdrvagd7vczbz",
-    "aoai_endpoint": "https://fdry-drvagnt2-dev-7vczbz.cognitiveservices.azure.com/",
-    "embedding_deployment": "text-embedding-3-large",
+    "subscription_id": os.environ.get("AZURE_SUBSCRIPTION_ID", ""),
+    "resource_group": os.environ.get("AZURE_RESOURCE_GROUP", ""),
+    "search_service": os.environ.get("AZURE_SEARCH_SERVICE_NAME", ""),
+    "search_service_name": os.environ.get("AZURE_SEARCH_SERVICE_NAME", ""),
+    "index_name": os.environ.get("AZURE_SEARCH_INDEX_NAME", "driving-manual-index"),
+    "skillset_name": os.environ.get("AZURE_SEARCH_SKILLSET_NAME", "driving-manual-skillset"),
+    "datasource_name": os.environ.get("AZURE_SEARCH_DATASOURCE_NAME", "driving-manual-datasource"),
+    "indexer_name": os.environ.get("AZURE_SEARCH_INDEXER_NAME", "driving-manual-indexer"),
+    "storage_account": os.environ.get("AZURE_STORAGE_ACCOUNT", ""),
+    "storage_container": os.environ.get("AZURE_STORAGE_CONTAINER_PDFS", "pdfs"),
+    "storage_resource_id": os.environ.get("AZURE_STORAGE_RESOURCE_ID", ""),
+    "aoai_endpoint": os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
+    "embedding_deployment": os.environ.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
     "embedding_dimensions": 3072,
     "chunk_size": 512,
     "chunk_overlap": 100,
@@ -129,6 +130,19 @@ class SearchComponentsDeployer:
             config: Optional configuration dictionary. Uses DEFAULT_CONFIG if not provided.
         """
         self.config = {**DEFAULT_CONFIG, **(config or {})}
+        
+        # Validate required configuration
+        if not self.config['search_service_name']:
+            raise ValueError("Search service name is required. Set AZURE_SEARCH_SERVICE_NAME.")
+            
+        # Construct storage resource ID if missing but components are available
+        if not self.config['storage_resource_id'] and self.config['subscription_id'] and self.config['resource_group'] and self.config['storage_account']:
+            self.config['storage_resource_id'] = (
+                f"/subscriptions/{self.config['subscription_id']}/"
+                f"resourceGroups/{self.config['resource_group']}/"
+                f"providers/Microsoft.Storage/storageAccounts/{self.config['storage_account']}"
+            )
+
         self.search_endpoint = f"https://{self.config['search_service_name']}.search.windows.net"
         
         # Initialize credential (uses DefaultAzureCredential for managed identity)
@@ -175,7 +189,8 @@ class SearchComponentsDeployer:
                 type=SearchFieldDataType.String,
                 key=True,
                 filterable=True,
-                retrievable=True
+                retrievable=True,
+                analyzer_name="keyword"
             ),
             SearchField(
                 name="parent_id",
@@ -197,6 +212,7 @@ class SearchComponentsDeployer:
                 name="chunk_vector",
                 type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
                 searchable=True,
+                hidden=False,
                 vector_search_dimensions=self.config['embedding_dimensions'],
                 vector_search_profile_name="default-vector-profile"
             ),
@@ -359,11 +375,11 @@ class SearchComponentsDeployer:
                     parent_key_field_name="parent_id",
                     source_context="/document/pages/*/chunk_projection",
                     mappings=[
-                        InputFieldMappingEntry(name="content", source="content"),
-                        InputFieldMappingEntry(name="chunk_vector", source="chunk_vector"),
-                        InputFieldMappingEntry(name="document_id", source="document_id"),
-                        InputFieldMappingEntry(name="metadata_storage_name", source="document_id"),
-                        InputFieldMappingEntry(name="source_type", source="source_type"),
+                        InputFieldMappingEntry(name="content", source="/document/pages/*/chunk_projection/content"),
+                        InputFieldMappingEntry(name="chunk_vector", source="/document/pages/*/chunk_projection/chunk_vector"),
+                        InputFieldMappingEntry(name="document_id", source="/document/pages/*/chunk_projection/document_id"),
+                        InputFieldMappingEntry(name="metadata_storage_name", source="/document/pages/*/chunk_projection/document_id"),
+                        InputFieldMappingEntry(name="source_type", source="/document/pages/*/chunk_projection/source_type"),
                     ]
                 ),
                 # Selector for Images - COMMENTED OUT
@@ -379,7 +395,7 @@ class SearchComponentsDeployer:
             name=self.config['skillset_name'],
             description="Skillset for extracting, verbalizing images, and enriching content from PDF driving manuals",
             skills=[text_split_skill, embedding_skill_text, shaper_skill], # Added Shaper
-            index_projections=index_projections,
+            index_projection=index_projections,
             cognitive_services_account=DefaultCognitiveServicesAccount()
         )
         

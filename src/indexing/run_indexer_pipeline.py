@@ -27,6 +27,7 @@ Requirements:
 
 import argparse
 import logging
+import os
 import sys
 import time
 from typing import Dict, Any, Optional
@@ -47,8 +48,8 @@ API_VERSION = "2025-09-01"
 
 # Default configuration
 DEFAULT_CONFIG = {
-    "search_service_name": "srch-drvagnt2-dev-7vczbz",
-    "indexer_name": "driving-manual-indexer",
+    "search_service_name": os.environ.get("AZURE_SEARCH_SERVICE_NAME", ""),
+    "indexer_name": os.environ.get("AZURE_SEARCH_INDEXER_NAME", "driving-manual-indexer"),
 }
 
 
@@ -245,8 +246,8 @@ class IndexerPipelineRunner:
                 logger.info(f"  Status: {status.last_result.status}")
                 logger.info(f"  Start: {status.last_result.start_time}")
                 logger.info(f"  End: {status.last_result.end_time}")
-                logger.info(f"  Items Processed: {status.last_result.items_processed}")
-                logger.info(f"  Items Failed: {status.last_result.items_failed}")
+                logger.info(f"  Items Processed: {status.last_result.item_count}")
+                logger.info(f"  Items Failed: {status.last_result.failed_item_count}")
                 
                 # Errors
                 if status.last_result.errors:

@@ -163,11 +163,19 @@ class SkillsetMonitor:
             # Parse execution history
             history = []
             for execution in status.execution_history[:limit]:
+                # Handle status which might be an enum or string depending on SDK version
+                status_val = execution.status
+                if hasattr(status_val, 'value'):
+                    status_val = status_val.value
+                
+                # Handle item count attribute change in recent SDKs
+                items_count = getattr(execution, 'item_count', getattr(execution, 'items_processed', 0))
+
                 history.append({
-                    'status': execution.status.value if execution.status else 'unknown',
+                    'status': status_val or 'unknown',
                     'start_time': execution.start_time.isoformat() if execution.start_time else None,
                     'end_time': execution.end_time.isoformat() if execution.end_time else None,
-                    'items_processed': getattr(execution, 'items_processed', 0),
+                    'items_processed': items_count,
                     'items_failed': getattr(execution, 'items_failed', 0),
                     'errors': [self._format_error(e) for e in (execution.errors or [])],
                     'warnings': [self._format_warning(w) for w in (execution.warnings or [])]

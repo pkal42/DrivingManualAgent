@@ -23,7 +23,7 @@ Optional Environment Variables (override config file values):
 - CHAT_MODEL_DEPLOYMENT: Chat model deployment name
 - EMBEDDING_MODEL_DEPLOYMENT: Embedding model deployment name
 - VISION_MODEL_DEPLOYMENT: Vision model deployment name
-- AZURE_SEARCH_INDEX: Search index name
+- AZURE_SEARCH_INDEX_NAME: Search index name
 - SEARCH_TOP_K: Number of search results
 - AGENT_TEMPERATURE: Model temperature (0.0-1.0)
 - AGENT_MAX_TOKENS: Maximum tokens in response
@@ -393,7 +393,7 @@ def _apply_env_overrides(config_dict: Dict[str, Any]) -> Dict[str, Any]:
     - CHAT_MODEL_DEPLOYMENT: Overrides models.chat.deployment_name
     - EMBEDDING_MODEL_DEPLOYMENT: Overrides models.embedding.deployment_name
     - VISION_MODEL_DEPLOYMENT: Overrides models.vision.deployment_name
-    - AZURE_SEARCH_INDEX: Overrides search.index_name
+    - AZURE_SEARCH_INDEX_NAME: Overrides search.index_name
     - SEARCH_TOP_K: Overrides search.top_k
     - AGENT_TEMPERATURE: Overrides models.chat.temperature
     - AGENT_MAX_TOKENS: Overrides models.chat.max_tokens
@@ -437,7 +437,7 @@ def _apply_env_overrides(config_dict: Dict[str, Any]) -> Dict[str, Any]:
         config_dict["models"]["vision"]["deployment_name"] = vision_model
     
     # Search configuration overrides
-    if index_name := os.getenv("AZURE_SEARCH_INDEX"):
+    if index_name := os.getenv("AZURE_SEARCH_INDEX_NAME") or os.getenv("AZURE_SEARCH_INDEX"):
         config_dict["search"]["index_name"] = index_name
     
     if top_k := os.getenv("SEARCH_TOP_K"):
