@@ -137,7 +137,7 @@ module aiSearch 'modules/ai-search.bicep' = {
   }
 }
 
-// Deploy Storage Account with containers for PDFs and extracted images
+// Deploy Storage Account with containers for PDFs and normalized images
 // Uses hierarchical namespace for better organization and performance
 module storage 'modules/storage.bicep' = {
   scope: resourceGroup
@@ -193,8 +193,8 @@ output storageAccountName string = storage.outputs.storageAccountName
 @description('Name of the PDFs container')
 output pdfsContainerName string = storage.outputs.pdfsContainerName
 
-@description('Name of the extracted images container')
-output extractedImagesContainerName string = storage.outputs.extractedImagesContainerName
+@description('Name of the normalized images container')
+output normalizedImagesContainerName string = storage.outputs.normalizedImagesContainerName
 
 @description('GPT-4o model deployment name')
 output gpt4oDeploymentName string = modelDeployments.outputs.gpt4oDeploymentName

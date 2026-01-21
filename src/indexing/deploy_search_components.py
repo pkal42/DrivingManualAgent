@@ -90,6 +90,9 @@ from azure.search.documents.indexes.models import (
     IndexProjectionMode,
     ImageAnalysisSkill,
     VisualFeature,
+    SearchIndexerKnowledgeStore,
+    SearchIndexerKnowledgeStoreProjection,
+    SearchIndexerKnowledgeStoreBlobProjectionSelector,
 )
 
 # Configure logging
@@ -115,6 +118,8 @@ DEFAULT_CONFIG = {
     "storage_account": os.environ.get("AZURE_STORAGE_ACCOUNT", ""),
     "storage_container": os.environ.get("AZURE_STORAGE_CONTAINER_PDFS", "pdfs"),
     "storage_resource_id": os.environ.get("AZURE_STORAGE_RESOURCE_ID", ""),
+    "storage_connection_string": os.environ.get("AZURE_STORAGE_CONNECTION_STRING", ""),
+    "image_container": os.environ.get("AZURE_STORAGE_CONTAINER_IMAGES", "normalized-images"),
     "aoai_endpoint": os.environ.get("AZURE_OPENAI_ENDPOINT", ""),
     "embedding_deployment": os.environ.get("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-large"),
     "embedding_dimensions": 3072,
@@ -266,6 +271,20 @@ class SearchComponentsDeployer:
                 facetable=True,
                 retrievable=True
             ),
+            SearchField(
+                name="image_blob_container",
+                type=SearchFieldDataType.String,
+                filterable=True,
+                facetable=True,
+                retrievable=True
+            ),
+            SearchField(
+                name="image_blob_name",
+                type=SearchFieldDataType.String,
+                filterable=False,
+                facetable=False,
+                retrievable=True
+            ),
         ]
         
         # Configure vector search with HNSW algorithm
@@ -343,7 +362,7 @@ class SearchComponentsDeployer:
             ]
         )
         
-        # Skill 3.1: Embedding - Text Chunks
+        # Skill 2: Embedding - Text Chunks
         embedding_skill_text = AzureOpenAIEmbeddingSkill(
             name="embed-text-chunks",
             description="Generate embeddings for text chunks",
@@ -360,7 +379,7 @@ class SearchComponentsDeployer:
             ]
         )
 
-        # Skill 2: Image Analysis (captures captions for each extracted image)
+        # Skill 3: Image Analysis (captures captions for each extracted image)
         image_analysis_skill = ImageAnalysisSkill(
             name="analyze-images",
             description="Analyze normalized images and produce descriptive captions",
@@ -374,7 +393,7 @@ class SearchComponentsDeployer:
             ]
         )
 
-        # Skill 3.2: Embedding - Image Captions
+        # Skill 4: Embedding - Image Captions
         embedding_skill_images = AzureOpenAIEmbeddingSkill(
             name="embed-image-captions",
             description="Generate embeddings for image captions",
@@ -391,7 +410,7 @@ class SearchComponentsDeployer:
             ]
         )
         
-        # Skill 1.5: Shaper (Best Practice for RAG)
+        # Skill 5: Shaper - Text Chunks (Best Practice for RAG)
         # Creates a structured object for each chunk to be projected
         shaper_skill = ShaperSkill(
             name="chunk-shaper",
@@ -408,23 +427,53 @@ class SearchComponentsDeployer:
             ]
         )
 
-        # Skill 4: Image Shaper
-        shaper_skill_images = ShaperSkill(
-            name="image-shaper",
-            description="Shape image captions into structured index projections",
-            context="/document/normalized_images/*/image_description/captions/*",
-            inputs=[
-                InputFieldMappingEntry(name="content", source="/document/normalized_images/*/image_description/captions/*/text"),
-                InputFieldMappingEntry(name="chunk_vector", source="/document/normalized_images/*/image_description/captions/*/vector"),
-                InputFieldMappingEntry(name="document_id", source="/document/metadata_storage_name"),
-                InputFieldMappingEntry(name="source_type", source="='image'")
-            ],
+        knowledge_store_connection: Optional[str] = None
+        if self.config.get("storage_resource_id"):
+            knowledge_store_connection = (
+                f"ResourceId={self.config['storage_resource_id']};Authentication=ManagedIdentity;"
+            )
+        elif self.config.get("storage_connection_string"):
+            knowledge_store_connection = self.config["storage_connection_string"]
+
+        knowledge_store_configured = bool(knowledge_store_connection and self.config["image_container"])
+
+        # Index Projections: Map chunks and images to the search index
+        container_value = self.config['image_container'] or ''
+
+        # Skill 6: Shaper - Image Metadata
+        # Shape reusable image metadata once per normalized image to avoid
+        # parsing expressions in index projection mappings.
+        image_metadata_inputs = [
+            InputFieldMappingEntry(name="source_type", source="='image'"),
+            InputFieldMappingEntry(name="image_blob_container", source=f"='{container_value}'"),
+            InputFieldMappingEntry(name="image_blob_name", source="/document/metadata_storage_name"),
+            InputFieldMappingEntry(name="page_number", source="/document/normalized_images/*/pageNumber"),
+        ]
+
+        image_metadata_shaper = ShaperSkill(
+            name="image-metadata-shaper",
+            description="Attach image metadata (blob info, type) to each normalized image",
+            context="/document/normalized_images/*",
+            inputs=image_metadata_inputs,
             outputs=[
-                OutputFieldMappingEntry(name="output", target_name="image_projection")
+                OutputFieldMappingEntry(name="output", target_name="image_metadata")
             ]
         )
-        
-        # Index Projections: Map chunks and images to the search index
+
+        image_projection_mappings = [
+            InputFieldMappingEntry(name="content", source="/document/normalized_images/*/image_description/captions/*/text"),
+            InputFieldMappingEntry(name="chunk_vector", source="/document/normalized_images/*/image_description/captions/*/vector"),
+            InputFieldMappingEntry(name="document_id", source="/document/metadata_storage_name"),
+            InputFieldMappingEntry(name="metadata_storage_name", source="/document/metadata_storage_name"),
+            InputFieldMappingEntry(name="source_type", source="/document/normalized_images/*/image_metadata/source_type"),
+        ]
+
+        image_projection_mappings.extend([
+            InputFieldMappingEntry(name="image_blob_container", source="/document/normalized_images/*/image_metadata/image_blob_container"),
+            InputFieldMappingEntry(name="image_blob_name", source="/document/normalized_images/*/image_metadata/image_blob_name"),
+            InputFieldMappingEntry(name="page_number", source="/document/normalized_images/*/image_metadata/page_number"),
+        ])
+
         index_projections = SearchIndexerIndexProjection(
             selectors=[
                 # Selector for Text Chunks
@@ -444,28 +493,45 @@ class SearchComponentsDeployer:
                 SearchIndexerIndexProjectionSelector(
                     target_index_name=self.config['index_name'],
                     parent_key_field_name="image_parent_id",
-                    source_context="/document/normalized_images/*/image_description/captions/*/image_projection",
-                    mappings=[
-                        InputFieldMappingEntry(name="content", source="/document/normalized_images/*/image_description/captions/*/image_projection/content"),
-                        InputFieldMappingEntry(name="chunk_vector", source="/document/normalized_images/*/image_description/captions/*/image_projection/chunk_vector"),
-                        InputFieldMappingEntry(name="document_id", source="/document/normalized_images/*/image_description/captions/*/image_projection/document_id"),
-                        InputFieldMappingEntry(name="metadata_storage_name", source="/document/normalized_images/*/image_description/captions/*/image_projection/document_id"),
-                        InputFieldMappingEntry(name="source_type", source="/document/normalized_images/*/image_description/captions/*/image_projection/source_type"),
-                    ]
-                ),
+                    source_context="/document/normalized_images/*/image_description/captions/*",
+                    mappings=image_projection_mappings
+                )
             ],
             parameters=SearchIndexerIndexProjectionsParameters(
                 projection_mode=IndexProjectionMode.SKIP_INDEXING_PARENT_DOCUMENTS
             )
         )
         
+        knowledge_store = None
+        if knowledge_store_configured:
+            knowledge_store = SearchIndexerKnowledgeStore(
+                storage_connection_string=knowledge_store_connection,
+                projections=[
+                    SearchIndexerKnowledgeStoreProjection(
+                        files=[
+                            SearchIndexerKnowledgeStoreBlobProjectionSelector(
+                                storage_container=self.config["image_container"],
+                                source="/document/normalized_images/*",
+                                generated_key_name="imageBlobName",
+                                reference_key_name="parentReferenceKey",
+                            )
+                        ]
+                    )
+                ],
+            )
+        else:
+            logger.warning(
+                "Knowledge store not configured; set AZURE_STORAGE_CONTAINER_IMAGES and either provide AZURE_STORAGE_RESOURCE_ID context or a connection string"
+            )
+
         # Create skillset with all skills and projections
         skillset = SearchIndexerSkillset(
             name=self.config['skillset_name'],
             description="Skillset for extracting, verbalizing images, and enriching content from PDF driving manuals",
-            skills=[text_split_skill, embedding_skill_text, image_analysis_skill, embedding_skill_images, shaper_skill, shaper_skill_images], # Added Image Skills
+            skills=[text_split_skill, embedding_skill_text, image_analysis_skill, embedding_skill_images, shaper_skill, image_metadata_shaper], # Added Image Skills
             index_projection=index_projections,
-            cognitive_services_account=DefaultCognitiveServicesAccount()
+            cognitive_services_account=DefaultCognitiveServicesAccount(),
+            knowledge_store=knowledge_store
         )
         
         try:

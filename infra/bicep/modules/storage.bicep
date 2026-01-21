@@ -7,9 +7,9 @@
 //    - Uploaded driving manual PDF files
 //    - Source documents for indexing pipeline
 //
-// 2. Extracted Images (extracted-images container):
-//    - Images extracted from PDFs during indexing
-//    - Referenced in agent responses for visual context
+// 2. Normalized Images (normalized-images container):
+//    - Images generated from PDFs during indexing
+//    - Used by the knowledge store blob projection and agent responses
 //
 // Storage configuration:
 // - Hierarchical namespace enabled (Azure Data Lake Gen2)
@@ -57,7 +57,7 @@ var storageAccountName = 'st${projectShortName}${envShortName}${uniqueSuffix}'
 
 // Container names for different data types
 var pdfsContainerName = 'pdfs'
-var extractedImagesContainerName = 'extracted-images'
+var normalizedImagesContainerName = 'normalized-images'
 
 // ============================================================================
 // Storage Account
@@ -194,15 +194,15 @@ resource pdfsContainer 'Microsoft.Storage/storageAccounts/blobServices/container
   }
 }
 
-// Container for extracted images from PDFs
-// Generated during the indexing pipeline
-resource extractedImagesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
+// Container for normalized images exported by the knowledge store
+// Generated during the indexing pipeline as part of image extraction
+resource normalizedImagesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-01-01' = {
   parent: blobService
-  name: extractedImagesContainerName
+  name: normalizedImagesContainerName
   properties: {
     publicAccess: 'None'
     metadata: {
-      description: 'Images extracted from PDF documents during indexing'
+      description: 'Normalized images exported from PDF documents via Azure AI Search knowledge store'
       contentType: 'image/*'
     }
   }
@@ -227,5 +227,5 @@ output blobEndpoint string = storageAccount.properties.primaryEndpoints.blob
 @description('Name of the PDFs container')
 output pdfsContainerName string = pdfsContainer.name
 
-@description('Name of the extracted images container')
-output extractedImagesContainerName string = extractedImagesContainer.name
+@description('Name of the normalized images container')
+output normalizedImagesContainerName string = normalizedImagesContainer.name
