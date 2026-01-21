@@ -259,6 +259,13 @@ class SearchComponentsDeployer:
                 facetable=True,
                 retrievable=True
             ),
+            SearchField(
+                name="image_parent_id",
+                type=SearchFieldDataType.String,
+                filterable=True,
+                facetable=True,
+                retrievable=True
+            ),
         ]
         
         # Configure vector search with HNSW algorithm
@@ -353,17 +360,17 @@ class SearchComponentsDeployer:
             ]
         )
 
-        # Skill 2: Image Analysis
+        # Skill 2: Image Analysis (captures captions for each extracted image)
         image_analysis_skill = ImageAnalysisSkill(
             name="analyze-images",
-            description="Generate caption for images",
+            description="Analyze normalized images and produce descriptive captions",
             context="/document/normalized_images/*",
-            visual_features=[VisualFeature.CAPTION],
+            visual_features=[VisualFeature.DESCRIPTION],
             inputs=[
                 InputFieldMappingEntry(name="image", source="/document/normalized_images/*")
             ],
             outputs=[
-                OutputFieldMappingEntry(name="caption", target_name="image_caption")
+                OutputFieldMappingEntry(name="description", target_name="image_description")
             ]
         )
 
@@ -371,13 +378,13 @@ class SearchComponentsDeployer:
         embedding_skill_images = AzureOpenAIEmbeddingSkill(
             name="embed-image-captions",
             description="Generate embeddings for image captions",
-            context="/document/normalized_images/*",
+            context="/document/normalized_images/*/image_description/captions/*",
             resource_url=self.config['aoai_endpoint'],
             deployment_name=self.config['embedding_deployment'],
             model_name=self.config['embedding_deployment'],
             dimensions=self.config['embedding_dimensions'],
             inputs=[
-                InputFieldMappingEntry(name="text", source="/document/normalized_images/*/image_caption")
+                InputFieldMappingEntry(name="text", source="/document/normalized_images/*/image_description/captions/*/text")
             ],
             outputs=[
                 OutputFieldMappingEntry(name="embedding", target_name="vector")
@@ -404,10 +411,11 @@ class SearchComponentsDeployer:
         # Skill 4: Image Shaper
         shaper_skill_images = ShaperSkill(
             name="image-shaper",
-            context="/document/normalized_images/*",
+            description="Shape image captions into structured index projections",
+            context="/document/normalized_images/*/image_description/captions/*",
             inputs=[
-                InputFieldMappingEntry(name="content", source="/document/normalized_images/*/image_caption"),
-                InputFieldMappingEntry(name="chunk_vector", source="/document/normalized_images/*/vector"),
+                InputFieldMappingEntry(name="content", source="/document/normalized_images/*/image_description/captions/*/text"),
+                InputFieldMappingEntry(name="chunk_vector", source="/document/normalized_images/*/image_description/captions/*/vector"),
                 InputFieldMappingEntry(name="document_id", source="/document/metadata_storage_name"),
                 InputFieldMappingEntry(name="source_type", source="='image'")
             ],
@@ -435,14 +443,14 @@ class SearchComponentsDeployer:
                 # Selector for Images
                 SearchIndexerIndexProjectionSelector(
                     target_index_name=self.config['index_name'],
-                    parent_key_field_name="parent_id",
-                    source_context="/document/normalized_images/*/image_projection",
+                    parent_key_field_name="image_parent_id",
+                    source_context="/document/normalized_images/*/image_description/captions/*/image_projection",
                     mappings=[
-                        InputFieldMappingEntry(name="content", source="/document/normalized_images/*/image_projection/content"),
-                        InputFieldMappingEntry(name="chunk_vector", source="/document/normalized_images/*/image_projection/chunk_vector"),
-                        InputFieldMappingEntry(name="document_id", source="/document/normalized_images/*/image_projection/document_id"),
-                        InputFieldMappingEntry(name="metadata_storage_name", source="/document/normalized_images/*/image_projection/document_id"),
-                        InputFieldMappingEntry(name="source_type", source="/document/normalized_images/*/image_projection/source_type"),
+                        InputFieldMappingEntry(name="content", source="/document/normalized_images/*/image_description/captions/*/image_projection/content"),
+                        InputFieldMappingEntry(name="chunk_vector", source="/document/normalized_images/*/image_description/captions/*/image_projection/chunk_vector"),
+                        InputFieldMappingEntry(name="document_id", source="/document/normalized_images/*/image_description/captions/*/image_projection/document_id"),
+                        InputFieldMappingEntry(name="metadata_storage_name", source="/document/normalized_images/*/image_description/captions/*/image_projection/document_id"),
+                        InputFieldMappingEntry(name="source_type", source="/document/normalized_images/*/image_description/captions/*/image_projection/source_type"),
                     ]
                 ),
             ],
