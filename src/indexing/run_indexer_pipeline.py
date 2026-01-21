@@ -30,6 +30,10 @@ import logging
 import os
 import sys
 import time
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 from typing import Dict, Any, Optional
 
 from azure.core.exceptions import ResourceNotFoundError

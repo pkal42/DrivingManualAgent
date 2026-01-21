@@ -39,6 +39,10 @@ from typing import Optional, Dict, Any, List
 from azure.core.exceptions import ResourceNotFoundError, ResourceExistsError
 from azure.identity import DefaultAzureCredential
 from azure.search.documents.indexes import SearchIndexClient, SearchIndexerClient
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 from azure.search.documents.indexes.models import (
     # Index models
     SearchIndex,
@@ -348,6 +352,37 @@ class SearchComponentsDeployer:
                 OutputFieldMappingEntry(name="embedding", target_name="vector")
             ]
         )
+
+        # Skill 2: Image Analysis
+        image_analysis_skill = ImageAnalysisSkill(
+            name="analyze-images",
+            description="Generate caption for images",
+            context="/document/normalized_images/*",
+            visual_features=[VisualFeature.CAPTION],
+            inputs=[
+                InputFieldMappingEntry(name="image", source="/document/normalized_images/*")
+            ],
+            outputs=[
+                OutputFieldMappingEntry(name="caption", target_name="image_caption")
+            ]
+        )
+
+        # Skill 3.2: Embedding - Image Captions
+        embedding_skill_images = AzureOpenAIEmbeddingSkill(
+            name="embed-image-captions",
+            description="Generate embeddings for image captions",
+            context="/document/normalized_images/*",
+            resource_url=self.config['aoai_endpoint'],
+            deployment_name=self.config['embedding_deployment'],
+            model_name=self.config['embedding_deployment'],
+            dimensions=self.config['embedding_dimensions'],
+            inputs=[
+                InputFieldMappingEntry(name="text", source="/document/normalized_images/*/image_caption")
+            ],
+            outputs=[
+                OutputFieldMappingEntry(name="embedding", target_name="vector")
+            ]
+        )
         
         # Skill 1.5: Shaper (Best Practice for RAG)
         # Creates a structured object for each chunk to be projected
@@ -363,6 +398,21 @@ class SearchComponentsDeployer:
             ],
             outputs=[
                 OutputFieldMappingEntry(name="output", target_name="chunk_projection")
+            ]
+        )
+
+        # Skill 4: Image Shaper
+        shaper_skill_images = ShaperSkill(
+            name="image-shaper",
+            context="/document/normalized_images/*",
+            inputs=[
+                InputFieldMappingEntry(name="content", source="/document/normalized_images/*/image_caption"),
+                InputFieldMappingEntry(name="chunk_vector", source="/document/normalized_images/*/vector"),
+                InputFieldMappingEntry(name="document_id", source="/document/metadata_storage_name"),
+                InputFieldMappingEntry(name="source_type", source="='image'")
+            ],
+            outputs=[
+                OutputFieldMappingEntry(name="output", target_name="image_projection")
             ]
         )
         
@@ -382,8 +432,19 @@ class SearchComponentsDeployer:
                         InputFieldMappingEntry(name="source_type", source="/document/pages/*/chunk_projection/source_type"),
                     ]
                 ),
-                # Selector for Images - COMMENTED OUT
-                # ...
+                # Selector for Images
+                SearchIndexerIndexProjectionSelector(
+                    target_index_name=self.config['index_name'],
+                    parent_key_field_name="parent_id",
+                    source_context="/document/normalized_images/*/image_projection",
+                    mappings=[
+                        InputFieldMappingEntry(name="content", source="/document/normalized_images/*/image_projection/content"),
+                        InputFieldMappingEntry(name="chunk_vector", source="/document/normalized_images/*/image_projection/chunk_vector"),
+                        InputFieldMappingEntry(name="document_id", source="/document/normalized_images/*/image_projection/document_id"),
+                        InputFieldMappingEntry(name="metadata_storage_name", source="/document/normalized_images/*/image_projection/document_id"),
+                        InputFieldMappingEntry(name="source_type", source="/document/normalized_images/*/image_projection/source_type"),
+                    ]
+                ),
             ],
             parameters=SearchIndexerIndexProjectionsParameters(
                 projection_mode=IndexProjectionMode.SKIP_INDEXING_PARENT_DOCUMENTS
@@ -394,7 +455,7 @@ class SearchComponentsDeployer:
         skillset = SearchIndexerSkillset(
             name=self.config['skillset_name'],
             description="Skillset for extracting, verbalizing images, and enriching content from PDF driving manuals",
-            skills=[text_split_skill, embedding_skill_text, shaper_skill], # Added Shaper
+            skills=[text_split_skill, embedding_skill_text, image_analysis_skill, embedding_skill_images, shaper_skill, shaper_skill_images], # Added Image Skills
             index_projection=index_projections,
             cognitive_services_account=DefaultCognitiveServicesAccount()
         )
@@ -477,7 +538,7 @@ class SearchComponentsDeployer:
         indexing_config = {
             "dataToExtract": "contentAndMetadata",
             "parsingMode": "default",
-            # "imageAction": "generateNormalizedImages", # Disabled to save costs and simplify debugging
+            "imageAction": "generateNormalizedImages", # Enabled to extract images
             "indexedFileNameExtensions": ".pdf",
             "allowSkillsetToReadFileData": True
         }
