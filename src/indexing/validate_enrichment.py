@@ -53,6 +53,10 @@ from azure.core.exceptions import AzureError
 from azure.identity import DefaultAzureCredential
 from azure.search.documents import SearchClient
 from azure.storage.blob import BlobServiceClient
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -189,9 +193,8 @@ class EnrichmentValidator:
                 search_text="*",
                 select=[
                     'chunk_id', 'document_id', 'content', 'page_number',
-                    'state', 'has_related_images', 'image_blob_urls',
-                    'image_descriptions', 'metadata_storage_name',
-                    'metadata_storage_path'
+                    'state', 'metadata_storage_name',
+                    'image_blob_name', 'image_blob_container', 'source_type'
                 ],
                 top=10000  # Large number to get all documents
             )

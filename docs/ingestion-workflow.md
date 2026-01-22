@@ -18,19 +18,19 @@ This guide explains the automated document ingestion pipeline for the DrivingMan
 The document ingestion pipeline automates the process of:
 
 1. **Uploading** PDF driving manuals to Azure Blob Storage
-2. **Extracting** text and images using Azure Document Intelligence OCR (prebuilt-layout model)
-3. **Chunking** text into 1000-character segments with 200-character overlap
+2. **Extracting** text using Azure AI Search native PDF extraction
+3. **Chunking** text into 1000-character segments with 200-character overlap (via SplitSkill)
 4. **Embedding** chunks using Azure OpenAI text-embedding-3-large (3072 dimensions)
 5. **Indexing** to Azure AI Search with hybrid search support
 6. **Validating** results and reporting statistics
 
 ### Key Features
 
-- ✅ Python-based pipeline using Azure SDK (100% managed services)
-- ✅ OCR-enabled text extraction with Azure Document Intelligence
+- ✅ Python-based setup using Azure SDK (100% managed services)
+- ✅ Native PDF text extraction (no external OCR service required)
 - ✅ Figure caption extraction from embedded images
-- ✅ Character-based chunking (1000 chars, 200 overlap)
-- ✅ Batch embedding generation for efficiency
+- ✅ Page-based chunking configuration
+- ✅ Automated Indexer-based ingestion
 - ✅ Managed identity authentication throughout (no API keys)
 - ✅ Stable API versions (Search 2024-07-01 GA)
 - ✅ Comprehensive error handling and logging
@@ -51,14 +51,15 @@ The document ingestion pipeline automates the process of:
          │
          ▼
 ┌─────────────────────────────────────────────────┐
-│  Python Indexing Pipeline (index_documents.py)   │
+│  Azure AI Search Indexer Pipeline               │
 │  ┌─────────────────────────────────────────────┐│
-│  │ 1. List PDFs from blob storage              ││
-│  │ 2. Download and analyze with Doc Intel     ││
-│  │ 3. Extract text + OCR + figure captions    ││
-│  │ 4. Chunk text (1000 chars, 200 overlap)    ││
-│  │ 5. Generate embeddings (Azure OpenAI)      ││
-│  │ 6. Upload to Search index (batch)          ││
+│  │ 1. Detect new blobs in 'pdfs' container     ││
+│  │ 2. Document Cracking (Native PDF Support)   ││
+│  │ 3. Skillset Execution:                      ││
+│  │    a. Text Split (Page-based chunking)      ││
+│  │    b. Image Analysis (Captioning)           ││
+│  │    c. Generate Embeddings (Azure OpenAI)    ││
+│  │ 4. Index Projection (Map fields to index)   ││
 │  └─────────────────────────────────────────────┘│
 └─────────────────┬───────────────────────────────┘
                   │
@@ -78,7 +79,6 @@ The document ingestion pipeline automates the process of:
 1. **Azure Resources Deployed**
    - Storage account with `pdfs` container
    - Azure AI Search service with index
-   - Azure Document Intelligence resource
    - Azure OpenAI (Foundry) with text-embedding-3-large deployment
    - Proper RBAC permissions configured
 
@@ -112,62 +112,28 @@ Or upload a single file:
 az storage blob upload ` `n  -f data/manuals/MI_DMV_2024.pdf ` `n  -c pdfs ` `n  -n MI_DMV_2024.pdf ` `n  --account-name <storage-account> ` `n  --auth-mode login
 ```
 
-### Step 2: Run Python Indexing Pipeline
+### Step 2: Trigger Search Indexer
 
-Execute the indexing script to process all PDFs:
+The Azure AI Search Indexer handles extraction, chunking, and embedding automatically. To run it immediately:
 
 ```powershell
 cd src/indexing
-python index_documents.py
+python trigger_indexer.py --indexer driving-manual-indexer --wait
 ```
 
 The script will:
-1. List all PDFs in the blob storage `pdfs` container
-2. Download each PDF and analyze with Document Intelligence
-3. Extract text using OCR (prebuilt-layout model)
-4. Extract figure captions from images
-5. Chunk text into 1000-character segments (200 char overlap)
-6. Generate embeddings using Azure OpenAI
-7. Upload chunks to Azure AI Search index in batches
-
-**Configuration:**
-Edit `index_documents.py` to customize:
-- Storage account and container
-- Document Intelligence endpoint
-- Foundry (Azure OpenAI) endpoint
-- Search endpoint and index name
-- Chunking parameters (size and overlap)
+1. Trigger the indexer execution
+2. Monitor status (queued -> running -> success)
+3. Report processed document counts and errors
 
 **Expected Output:**
 ```
-=== Starting Indexing Pipeline ===
-Storage Account: stdrvagdbvxlqv
-Container: pdfs
-Document Intelligence: https://di-drvagent-dev-bvxlqv.cognitiveservices.azure.com
-Search Endpoint: https://srch-drvagent-dev-bvxlqv.search.windows.net
-Index: driving-manual-index
-
-Found 1 PDF(s) to process
-
-=== Processing: MI_DMV_2024.pdf ===
-Extracting text with Document Intelligence (OCR enabled)...
-Processing pages: 100% complete
-Extracted text from 91 pages
-
-Chunking text (1000 chars, 200 overlap)...
-Created 286 chunks
-
-Generating embeddings (batch size: 100)...
-Batch 1/3: 100 chunks
-Batch 2/3: 100 chunks
-Batch 3/3: 86 chunks
-Generated 286 embeddings
-
-Uploading to search index...
-Upload complete: 286 succeeded, 0 failed
-
-=== Completed indexing: MI_DMV_2024.pdf ===
-Indexing pipeline completed successfully!
+INFO - Triggering indexer: driving-manual-indexer
+INFO - Indexer started. Monitoring status...
+INFO - Status: running | Items: 5 | Progress: 10%
+...
+INFO - Status: success | Items: 286 | Errors: 0
+INFO - Indexer execution completed successfully! for driving-manual-indexer
 ```
 
 ### Step 3: Verify Indexing
@@ -303,24 +269,23 @@ Error: DefaultAzureCredential failed to retrieve a token
 - Check RBAC roles:
   - User needs "Storage Blob Data Contributor" and "Storage Blob Data Reader"
   - User needs "Search Index Data Contributor"
-  - Document Intelligence MI needs "Storage Blob Data Reader"
+  - Search Service MI needs "Storage Blob Data Reader"
 - Refresh credentials if stale: `az logout && az login`
 - Wait 10-15 seconds after role assignment for propagation
 
-#### 2. Document Intelligence Extraction Fails
+#### 2. Indexer Document Cracking Fails
 
 **Symptom:**
 ```
-Error analyzing document with Document Intelligence
-ServiceResponseError: (InvalidRequest) The request is invalid
+"Error with data source: Error detecting index schema from data source"
+OR
+"Could not read file"
 ```
 
 **Solutions:**
-- Verify Document Intelligence resource is deployed
-- Check PDF is not encrypted or password-protected
-- Ensure PDF is under 500 MB and under 2000 pages
-- Verify managed identity has Storage Blob Data Reader role
-- Check Document Intelligence endpoint is correct
+- Verify `allowSkillsetToReadFileData` is set to `true` in Indexer configuration
+- Verify PDF is not encrypted or password-protected
+- Verify Search Service Identity has Storage Blob Data Reader role
 
 #### 3. Embedding Generation Fails
 
@@ -361,11 +326,10 @@ Created 0 chunks
 ```
 
 **Solutions:**
-- Verify PDF contains extractable text (not just scanned images)
-- OCR should work for scanned images - check Document Intelligence logs
+- Verify PDF contains extractable text
+- For scanned PDFs, ensure `imageAction` is set to `generateNormalizedImages`
 - Try different PDF file to isolate issue
-- Check if prebuilt-layout model is appropriate for document type
-- Verify Document Intelligence endpoint and authentication
+- Verify Skillset configuration and field mappings
 
 #### 6. Chunk Count Unexpectedly Low/High
 
@@ -378,7 +342,7 @@ Created 5000 chunks from 50-page document
 
 **Solutions:**
 - Check chunk_size and chunk_overlap settings
-- Verify Document Intelligence extracted text correctly
+- Verify text extraction quality in debug sessions
 - Review actual text length from extraction
 - Adjust chunking parameters if needed
 - For very dense documents, increase chunk_size
@@ -419,13 +383,6 @@ logging.basicConfig(
 Test each step independently:
 
 ```python
-# Test Document Intelligence
-from azure.ai.documentintelligence import DocumentIntelligenceClient
-from azure.identity import DefaultAzureCredential
-
-client = DocumentIntelligenceClient(endpoint, DefaultAzureCredential())
-# Test with small PDF...
-
 # Test Embeddings
 from openai import AzureOpenAI
 client = AzureOpenAI(...)
@@ -445,7 +402,6 @@ print(result)
 ### Monitor Azure Resources
 
 Check Azure Portal metrics:
-- Document Intelligence: Requests, errors, latency
 - Azure OpenAI: Token usage, rate limits, quotas
 - AI Search: Index size, query rate, document count
 - Storage: Blob operations, bandwidth
@@ -453,10 +409,9 @@ Check Azure Portal metrics:
 ### Review Logs
 
 Check logs in various locations:
-- Application logs: `indexing.log`, `indexing_with_ocr.log`
+- Application logs: `indexing.log`
 - Azure Monitor: Application Insights logs
-- Search service: Index and indexer logs (if diagnostics enabled)
-- Document Intelligence: Request logs in Azure Monitor
+- Search service: Indexer status and execution history
 
 ## Best Practices
 
@@ -492,7 +447,6 @@ Keep configuration values in a separate config file or environment variables:
 # config.py or .env
 STORAGE_ACCOUNT = "stdrvagdbvxlqv"
 CONTAINER_NAME = "pdfs"
-DOCUMENT_INTELLIGENCE_ENDPOINT = "https://..."
 FOUNDRY_ENDPOINT = "https://..."
 SEARCH_ENDPOINT = "https://..."
 INDEX_NAME = "driving-manual-index"
@@ -514,7 +468,7 @@ The indexing pipeline logs detailed information:
 - Monitor for warnings (may indicate issues)
 
 Common log messages to watch for:
-- "Failed to extract text" - Document Intelligence issues
+- "Failed to read file" - Storage/Permission issues
 - "Error generating embeddings" - Azure OpenAI throttling
 - "Upload failed" - Search service issues
 
@@ -523,7 +477,7 @@ Common log messages to watch for:
 To minimize costs:
 - Process PDFs in batches (avoid frequent small runs)
 - Use appropriate chunk size (1000 chars balances quality/cost)
-- Monitor Document Intelligence and OpenAI usage
+- Monitor OpenAI usage
 - Consider using fewer embedding dimensions for large-scale deployments
 - Clean up unused indexes and old data
 

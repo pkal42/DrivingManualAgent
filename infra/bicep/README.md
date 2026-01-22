@@ -10,28 +10,43 @@ All modules include comprehensive inline comments explaining:
 - Security configurations
 - Performance tuning options
 
-### Indexer Pipeline Modules
+### Infrastructure Modules
 
-1. **search-skillset.bicep** - Enrichment pipeline definition
-   - DocumentExtractionSkill (PDF text/image extraction)
-   - TextSplitSkill (token-based chunking)
-   - AzureOpenAIEmbeddingSkill (embedding generation)
-   - Optional image description skill (GPT-4o vision)
+1. **main.bicep** - Orchestrator template
+   - Deploys resource group
+   - Coordinates submodule deployments
+   - Configures RBAC assignments
 
-2. **search-index.bicep** - Hybrid search index schema
-   - Vector search configuration (HNSW algorithm)
-   - Semantic search configuration
-   - Complete field schema with metadata
+2. **modules/foundry-project.bicep** - AI Studio & Models
+   - Microsoft Foundry Hub & Project
+   - Model deployments (gpt-4o, text-embedding-3-large)
+   - OpenAI connection endpoints
 
-3. **search-datasource.bicep** - Blob storage data source
-   - Managed identity authentication
-   - Change detection for incremental indexing
-   - Soft delete detection
+3. **modules/ai-search.bicep** - Search Service
+   - Azure AI Search resource
+   - SKU configuration (Standard recommended for production)
+   - Diagnostic settings
 
-4. **search-indexer.bicep** - Indexer orchestration
-  - Data source -> Skillset -> Index flow
-   - Field mappings and output mappings
-   - Error handling and scheduling
+4. **modules/storage.bicep** - Data Lake Gen2
+   - Blob containers for PDFs and normalized images
+   - Hierarchical namespace enabled
+   - Access tier configuration
+
+5. **modules/role-assignments.bicep** - Identity & Access
+   - Assigns "Storage Blob Data Contributor" to Search Service
+   - Assigns "Cognitive Services OpenAI User" to Search Service
+   - Ensures managed identity connectivity for the agent
+
+### Search Data Plane Components
+
+The actual search configuration (Index Schema, Skillset, Data Source, Indexer) is **not** managed by Bicep.
+These data plane components are managed via the Python SDK to support complex logic and validation.
+
+Please refer to the [Indexing Documentation](../../src/indexing/README.md) for details on deploying:
+- `driving-manual-index`
+- `driving-manual-skillset`
+- `driving-manual-indexer`
+- `driving-manual-datasource`
 
 ## Prerequisites
 
@@ -47,6 +62,9 @@ All modules include comprehensive inline comments explaining:
 Use the subscription-scoped orchestrator to create the resource group, Foundry project, Azure AI Search, storage, and RBAC wiring in a single pass.
 
 ```powershell
+# Navigate to the Bicep directory
+cd infra/bicep
+
 # Optional preview (what-if)
 az deployment sub what-if `
   --location eastus2 `
@@ -66,27 +84,39 @@ az deployment sub show `
   --query properties.outputs.resourceGroupName.value -o tsv
 ```
 
-### Search Components Deployment (PowerShell REST API)
+### Search Components & Data Ingestion
 
-After the core infrastructure is deployed, use the PowerShell script to deploy search components via REST API. Bicep doesn't fully support Azure AI Search skillsets/indexes yet, so we use the REST API directly.
+After the core infrastructure is deployed using Bicep, return to the repository root to allow the Python scripts to configure the data plane.
+
+#### 1. Python Environment Setup
 
 ```powershell
-# Get search service name from deployment
-$searchService = az deployment sub show `
-  --name driving-manual-main `
-  --query properties.outputs.searchServiceName.value -o tsv
+# Return to root directory if currently in infra/bicep
+cd ../..
 
-# Deploy all search components (index, skillset, datasource, indexer)
-.\deploy-search-components.ps1 -SearchServiceName $searchService
+# Create and activate virtual environment
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1    # Windows
+# source .venv/bin/activate     # Linux/Mac
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-The script deploys:
-- **Index**: `driving-manual-index` with vector search (3072 dimensions) and semantic ranking
-- **Skillset**: Document extraction → text chunking → embedding generation pipeline
-- **Data Source**: Blob storage connection with managed identity authentication
-- **Indexer**: Orchestrates document processing through the enrichment pipeline
+#### 2. Deploy and Ingest
 
-REST API JSON templates are located in `modules/rest-*.json`.
+```bash
+# Deploy all search components (Index, Skillset, Indexer, Data Source)
+python src/indexing/deploy_search_components.py --deploy-all
+
+# Upload PDF documents to Blob Storage
+python src/indexing/upload_documents.py --directory data/manuals --recursive
+
+# Trigger the Indexing Pipeline
+python src/indexing/trigger_indexer.py --indexer driving-manual-indexer --wait
+```
+
+For full details, see [src/indexing/README.md](../../src/indexing/README.md).
 
 ### Validation
 
@@ -105,8 +135,6 @@ az deployment sub what-if `
   --template-file main.bicep `
   --parameters parameters/dev.bicepparam
 ```
-
-**Note**: Search components (skillset, index, datasource, indexer) are deployed via PowerShell REST API script, not Bicep.
 
 ## Configuration
 
@@ -191,11 +219,11 @@ az role assignment create `
 
 ## Next Steps
 
-After deploying infrastructure:
-1. Upload sample PDFs to blob storage
-2. Run indexer manually: `az search indexer run`
-3. Validate with `src/indexing/validate_indexer.py`
-4. Configure automatic scheduling if needed
+After deploying infrastructure through bicep:
+1. **Deploy Search Components**: `python src/indexing/deploy_search_components.py --deploy-all`
+2. **Upload Documents**: `python src/indexing/upload_documents.py --directory data/manuals --recursive`
+3. **Run Indexer**: `python src/indexing/trigger_indexer.py --indexer driving-manual-indexer --wait`
+4. **Validate**: `python src/indexing/validate_enrichment.py`
 
 ## References
 

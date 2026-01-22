@@ -5,7 +5,7 @@ Multimodal RAG agent using Azure AI Agent Framework v2 for answering questions f
 ## Overview
 
 This project implements an intelligent agent that can answer questions about state driving laws and regulations by:
-- Extracting text and images from PDF driving manuals using Azure Document Intelligence OCR
+- Extracting text and images from PDF driving manuals using Azure AI Search native text extraction
 - Creating searchable embeddings for semantic search
 - Providing accurate answers with citations and relevant images
 - Supporting multiple US states with hybrid search capabilities
@@ -15,7 +15,7 @@ This project implements an intelligent agent that can answer questions about sta
 ### Components
 
 1. **Python Indexing Pipeline** (`src/indexing/`)
-   - Azure Document Intelligence for OCR-enabled PDF text and image extraction (prebuilt-layout model)
+   - Azure AI Search native indexer for PDF text and image extraction
    - Character-based text chunking (1000 chars, 200 overlap)
    - Azure OpenAI for vector embeddings (text-embedding-3-large, 3072 dimensions)
    - Hybrid search index (keyword + vector + semantic) via Azure AI Search
@@ -29,7 +29,6 @@ This project implements an intelligent agent that can answer questions about sta
 
 3. **Infrastructure as Code** (`infra/bicep/`)
    - Modular Bicep templates with comprehensive comments
-   - Azure Document Intelligence deployment for OCR
    - Azure AI Search, Storage, and Foundry (Azure OpenAI) resources
    - Managed identity authentication (no keys)
    - RBAC-based security model
@@ -147,19 +146,19 @@ az storage blob upload-batch `
 
 ### 3. Run Python Indexing Pipeline
 
-The indexing pipeline processes PDFs using Azure Document Intelligence OCR and uploads chunks to Azure AI Search:
+The indexing pipeline processes PDFs using Azure AI Search native indexer with integrated vectorization:
 
 ```powershell
+# Manually trigger the indexer
 cd src/indexing
-python index_documents.py
+python trigger_indexer.py --indexer driving-manual-indexer --wait
 ```
 
 The pipeline will:
-1. List all PDFs in the blob storage container
-2. Extract text and images using Azure Document Intelligence (prebuilt-layout model with OCR)
-3. Chunk text into 1000-character segments with 200-character overlap
-4. Generate embeddings using Azure OpenAI (text-embedding-3-large)
-5. Upload chunks to Azure AI Search index
+1. Detect new PDFs in the blob storage container
+2. Extract text using native PDF parsing (with SplitSkill for chunking)
+3. Generate embeddings using Azure OpenAI (text-embedding-3-large)
+4. Populate the Azure AI Search index automatically
 
 ### 4. Verify Indexing
 
@@ -187,14 +186,14 @@ az search index show-statistics `
 │   ├── parameters/                   # Environment-specific parameters
 │   └── modules/                      # Bicep modules
 │       ├── ai-search.bicep           # Azure AI Search service
-│       ├── document-intelligence.bicep  # Document Intelligence for OCR
 │       ├── foundry-project.bicep     # AI Foundry project (Azure OpenAI)
 │       ├── model-deployments.bicep   # Model deployments
 │       ├── storage.bicep             # Blob storage for PDFs
 │       └── role-assignments.bicep    # RBAC configurations
 ├── src/
 │   ├── indexing/             # Python indexing pipeline
-│   │   ├── index_documents.py       # Main indexing script (Azure services)
+│   │   ├── trigger_indexer.py       # Indexer trigger script
+│   │   ├── deploy_search_components.py # Indexer setup script
 │   │   ├── generate_test_pdfs.py    # Test PDF generator
 │   │   └── .venv/                   # Python virtual environment
 │   └── agent/                # Agent implementation (coming soon)
@@ -217,9 +216,9 @@ az search index show-statistics `
 
 ### Indexing Pipeline (Completed)
 
-- ✅ Python-based indexing pipeline using Azure SDK
-- ✅ Azure Document Intelligence OCR for text and image extraction (prebuilt-layout model)
-- ✅ Character-based text chunking (1000 chars, 200 char overlap)
+- ✅ Python-based setup pipeline using Azure SDK
+- ✅ Azure AI Search Indexer for text extraction (native PDF support)
+- ✅ Page-based text chunking (SplitSkill)
 - ✅ Vector embeddings with Azure OpenAI text-embedding-3-large (3072 dimensions)
 - ✅ Hybrid search index (keyword + vector + semantic) via Azure AI Search (API 2024-07-01)
 - ✅ Figure caption extraction from images
@@ -251,8 +250,8 @@ az search index show-statistics `
 
 ## Roadmap
 
-- [x] Azure infrastructure deployment (Storage, Search, Document Intelligence, Foundry)
-- [x] Python indexing pipeline with Azure Document Intelligence OCR
+- [x] Azure infrastructure deployment (Storage, Search, Foundry)
+- [x] Automated Azure AI Search Indexer setup code
 - [x] Character-based chunking and embedding generation
 - [x] Successfully indexed Michigan DMV 2024 manual
 - [ ] GitHub Actions workflow for automated indexing
@@ -272,32 +271,20 @@ cd src/indexing
 .venv\Scripts\Activate.ps1
 
 # Run indexing for all PDFs in blob storage
-python index_documents.py
+python trigger_indexer.py --indexer driving-manual-indexer --wait
 ```
 
 The script will:
-1. Connect to Azure Blob Storage using managed identity
-2. List all PDFs in the 'pdfs' container
-3. For each PDF:
-   - Download and analyze with Azure Document Intelligence (OCR enabled)
-   - Extract text including figure captions
-   - Chunk text (1000 chars, 200 overlap)
-   - Generate embeddings via Azure OpenAI
-   - Upload to Azure AI Search index
-4. Report indexing statistics
+1. Connect to Azure AI Search using managed identity
+2. Trigger the indexer to process any new PDFs in the 'pdfs' container
+3. Monitor the execution status
+4. Report total documents processed and any errors
 
 ### Configuration
 
-Edit `index_documents.py` to customize:
-- `STORAGE_ACCOUNT`: Blob storage account name
-- `CONTAINER_NAME`: Container with PDFs (default: "pdfs")
-- `DOCUMENT_INTELLIGENCE_ENDPOINT`: Document Intelligence endpoint
-- `FOUNDRY_ENDPOINT`: Azure OpenAI endpoint
-- `EMBEDDING_DEPLOYMENT`: Embedding model deployment name
-- `SEARCH_ENDPOINT`: Azure AI Search endpoint
-- `INDEX_NAME`: Search index name
-- `CHUNK_SIZE`: Characters per chunk (default: 1000)
-- `CHUNK_OVERLAP`: Character overlap (default: 200)
+Configuration is managed via `config.py` and infrastructure parameters.
+- `src/indexing/config.py`: Indexer and skillset configuration
+- `infra/bicep/parameters/`: Infrastructure deployment parameters
 
 ### Generating Sample PDFs
 
@@ -318,8 +305,8 @@ Required RBAC roles:
   - Storage Blob Data Contributor (for uploading PDFs)
   - Storage Blob Data Reader (for reading PDFs)
   - Search Index Data Contributor (for uploading search documents)
-- **Document Intelligence Managed Identity**:
-  - Storage Blob Data Reader (for reading PDFs during OCR)
+- **Search Service Managed Identity**:
+  - Storage Blob Data Reader (for reading PDFs during indexing)
 - **Azure OpenAI** (Foundry):
   - Accessed via managed identity authentication (no API keys)
   - `disableLocalAuth=true` enforced for security

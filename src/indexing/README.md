@@ -9,14 +9,14 @@ This directory contains Python scripts for managing Azure AI Search components a
 Creates and configures all Azure AI Search components using the Python SDK.
 
 **Components Deployed:**
-- Search Index with vector search and semantic ranking
-- Skillset with document extraction, text chunking, and embedding generation  
-- Data Source connected to Azure Blob Storage
-- Indexer to orchestrate the enrichment pipeline
+- **Search Index**: Hybrid search enabled (vector + keyword + semantic).
+- **Skillset**: Defines the enrichment pipeline (Text Split, Azure OpenAI Embeddings, Image Analysis).
+- **Data Source**: Connection to Azure Blob Storage `pdfs` container.
+- **Indexer**: Orchestrates the data ingestion and enrichment process.
 
 **Usage:**
 ```bash
-# Deploy all components
+# Deploy/Update all components
 python src/indexing/deploy_search_components.py --deploy-all
 
 # Update individual components
@@ -25,80 +25,109 @@ python src/indexing/deploy_search_components.py --update-skillset
 python src/indexing/deploy_search_components.py --update-indexer
 ```
 
-**Key Features:**
-- Uses Azure AI Search SDK with API version 2025-09-01
-- Managed identity authentication (no keys/secrets)
-- Fixes common indexer issues:
-  - Sets `imageAction: generateNormalizedImages` (enables document extraction)
-  - Sets `allowSkillsetToReadFileData: True` (allows skillset to read PDFs)
-  - Proper field mappings from enrichment tree
+### 2. trigger_indexer.py
 
-### 2. run_indexer_pipeline.py
-
-Runs the indexer pipeline to process documents. Can be executed multiple times.
+Triggers the indexer execution and monitors its progress. This is the primary script for running the pipeline.
 
 **Usage:**
 ```bash
-# Run indexer and wait for completion
-python src/indexing/run_indexer_pipeline.py
+# Trigger indexer and wait for completion
+python src/indexing/trigger_indexer.py --indexer driving-manual-indexer --wait
 
-# Reset indexer before running (forces reprocessing ALL documents)
-python src/indexing/run_indexer_pipeline.py --reset
-
-# Run without waiting
-python src/indexing/run_indexer_pipeline.py --no-wait
-
-# Check status only
-python src/indexing/run_indexer_pipeline.py --status-only
-
-# Custom timeout
-python src/indexing/run_indexer_pipeline.py --timeout 600
+# Trigger with custom timeout (seconds)
+python src/indexing/trigger_indexer.py --indexer driving-manual-indexer --wait --timeout 3600
 ```
 
-**When to reset:**
-- Indexer shows "success" but processed 0 items (change tracking issue)
-- After modifying skillset configuration
-- Need to force complete reindexing
+### 3. validate_enrichment.py
+
+Validates the integrity and quality of the indexed data. Ensures documents were processed, chunks were created, and fields are populated correctly.
+
+**Usage:**
+```bash
+# Validate all documents in the index
+python src/indexing/validate_enrichment.py
+
+# Validate a specific document
+python src/indexing/validate_enrichment.py --document california-dmv-handbook-2024.pdf
+
+# Generate validation reports
+python src/indexing/validate_enrichment.py --json-output report.json --markdown-output report.md
+```
+
+### 4. monitor_skillset.py
+
+Advanced debugging tool for inspecting skillset execution history and debugging specific documents using the Search Debug Sessions API.
+
+**Usage:**
+```bash
+# Monitor recent indexer executions for errors
+python src/indexing/monitor_skillset.py --indexer driving-manual-indexer
+
+# Analyze specific skillset errors
+python src/indexing/monitor_skillset.py --skillset driving-manual-skillset --show-errors
+```
+
+### 5. upload_documents.py
+
+Utility to upload PDF manuals to Blob Storage with appropriate metadata.
+
+**Usage:**
+```bash
+# Upload a single file
+python src/indexing/upload_documents.py --file data/manuals/MI_DMV_2024.pdf --state Michigan --year 2024
+
+# Batch upload
+python src/indexing/upload_documents.py --directory data/manuals --recursive
+```
+
+### 6. generate_test_pdfs.py
+
+Generates synthetic PDF documents for testing the pipeline without relying on external files.
+
+**Usage:**
+```bash
+python src/indexing/generate_test_pdfs.py
+```
+
+## Configuration
+
+Configuration is centralized in `src/indexing/config.py`. It loads settings from the environment variables (see `.env.example`) or uses default values.
+
+**Key Configuration Parameters:**
+- `AZURE_STORAGE_ACCOUNT`: Storage account name.
+- `AZURE_SEARCH_ENDPOINT`: Search service endpoint.
+- `AZURE_SEARCH_INDEX_NAME`: Default `driving-manual-index`.
+- `AZURE_SEARCH_INDEXER_NAME`: Default `driving-manual-indexer`.
+- `AZURE_SEARCH_SKILLSET_NAME`: Default `driving-manual-skillset`.
+
 
 ## Pipeline Architecture
-
-### Skillset Flow
 
 ```
 PDF Document (Blob Storage)
     ↓
-DocumentExtractionSkill
-    ├─→ Extracted Text (/document/extracted_content)
-    └─→ Normalized Images
+[Indexer] Document Cracking
+    ├─→ Extracted Text (/document/content)
+    └─→ Normalized Images (/document/normalized_images)
         ↓
-TextSplitSkill (512 tokens, 100 overlap)
+[Skillset]
+    │
+    ├─→ SplitSkill (Page-based chunking)
+    │     ↓
+    │   Text Chunks (/document/pages/*)
+    │
+    ├─→ ImageAnalysisSkill (Captioning)
+    │     ↓
+    │   Image Descriptions
+    │
+    └─→ AzureOpenAIEmbeddingSkill (text-embedding-3-large)
+          ↓
+        3072-dim Vector Embeddings
     ↓
-Text Chunks (/document/pages/*/text)
+[Index Projections]
     ↓
-AzureOpenAIEmbeddingSkill (text-embedding-3-large)
-    ↓
-3072-dim Vector Embeddings (/document/pages/*/vector)
-    ↓
-Search Index (chunk_id, content, chunk_vector)
-```
-
-### Configuration
-
-Default configuration in `deploy_search_components.py`:
-
-```python
-{
-    "search_service_name": "srch-drvagnt2-dev-7vczbz",
-    "index_name": "driving-manual-index",
-    "skillset_name": "driving-manual-skillset",
-    "datasource_name": "driving-manual-datasource",
-    "indexer_name": "driving-manual-indexer",
-    "storage_container": "pdfs",
-    "embedding_deployment": "text-embedding-3-large",
-    "embedding_dimensions": 3072,
-    "chunk_size": 512,
-    "chunk_overlap": 100
-}
+Azure AI Search Index
+(chunk_id, content, chunk_vector, image_blob_name, etc.)
 ```
 
 ## Workflow
@@ -118,12 +147,12 @@ python src/indexing/deploy_search_components.py --deploy-all
 
 3. **Upload PDF documents** to blob storage:
 ```bash
-az storage blob upload --account-name stdrvagd7vczbz --container-name pdfs --file data/manuals/Driving_MI.pdf --name Driving_MI.pdf --auth-mode login
+python src/indexing/upload_documents.py --directory data/manuals --recursive
 ```
 
 4. **Run the indexer pipeline**:
 ```bash
-python src/indexing/run_indexer_pipeline.py --reset
+python src/indexing/trigger_indexer.py --indexer driving-manual-indexer --wait
 ```
 
 ### Updating and Reprocessing
@@ -133,17 +162,17 @@ python src/indexing/run_indexer_pipeline.py --reset
 # Update the skillset
 python src/indexing/deploy_search_components.py --update-skillset
 
-# Reprocess all documents
-python src/indexing/run_indexer_pipeline.py --reset
+# Reset and reprocess all documents
+python src/indexing/trigger_indexer.py --indexer driving-manual-indexer --reset --wait
 ```
 
 **After adding new documents:**
 ```bash
 # Upload new PDFs
-az storage blob upload --account-name stdrvagd7vczbz --container-name pdfs --file new_manual.pdf --name new_manual.pdf --auth-mode login
+python src/indexing/upload_documents.py --file new_manual.pdf --state "State" --year 2024
 
-# Run indexer (processes only new/changed files)
-python src/indexing/run_indexer_pipeline.py
+# Trigger indexer (processes only new/changed files)
+python src/indexing/trigger_indexer.py --indexer driving-manual-indexer --wait
 ```
 
 ## Troubleshooting
@@ -154,7 +183,7 @@ python src/indexing/run_indexer_pipeline.py
 
 **Solution:**
 ```bash
-python src/indexing/run_indexer_pipeline.py --reset
+python src/indexing/trigger_indexer.py --indexer driving-manual-indexer --reset --wait
 ```
 
 ### Issue: DocumentExtractionSkill errors
@@ -166,7 +195,7 @@ python src/indexing/run_indexer_pipeline.py --reset
 **Solution:** Redeploy the indexer with fixed configuration:
 ```bash
 python src/indexing/deploy_search_components.py --update-indexer
-python src/indexing/run_indexer_pipeline.py --reset
+python src/indexing/trigger_indexer.py --indexer driving-manual-indexer --reset --wait
 ```
 
 ### Issue: No embeddings generated
@@ -181,56 +210,19 @@ python src/indexing/run_indexer_pipeline.py --reset
 python src/indexing/deploy_search_components.py --update-skillset
 ```
 
-### Issue: Indexer timeout
+## Environment Setup
 
-**Solution:** Increase timeout or process in batches:
-```bash
-# Increase timeout to 10 minutes
-python src/indexing/run_indexer_pipeline.py --timeout 600
+Before running any scripts, ensure your Python environment is configured:
 
-# Or update indexer batch size
-python src/indexing/deploy_search_components.py --update-indexer
-```
+```powershell
+# Create virtual environment
+python -m venv .venv
 
-## Other Scripts
+# Activate environment
+.\.venv\Scripts\Activate.ps1    # Windows
+# source .venv/bin/activate     # Linux/Mac
 
-### upload_documents.py
-Uploads PDF documents from local directory to blob storage.
-
-```bash
-python src/indexing/upload_documents.py --directory data/manuals --container pdfs
-```
-
-### validate_indexer.py
-Validates indexer execution and index health.
-
-```bash
-python src/indexing/validate_indexer.py --skillset-name driving-manual-skillset --indexer-name driving-manual-indexer
-```
-
-### monitor_skillset.py
-Monitors skillset execution with detailed error reporting.
-
-```bash
-python src/indexing/monitor_skillset.py --skillset-name driving-manual-skillset
-```
-
-## Requirements
-
-```bash
-pip install azure-search-documents>=11.6.0 azure-identity>=1.12.0 azure-storage-blob>=12.0.0
-```
-
-Or install from project root:
-```bash
+# Install dependencies
 pip install -r requirements.txt
 ```
-
-## API Version
-
-All scripts use **Azure AI Search API version 2025-09-01** which includes:
-- Full vector search support
-- Semantic ranking capabilities
-- AzureOpenAIEmbeddingSkill with dimensions parameter
-- Enhanced skillset execution monitoring
 

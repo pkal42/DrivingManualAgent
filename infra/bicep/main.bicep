@@ -69,6 +69,9 @@ param tags object = {
   managedBy: 'Bicep'
 }
 
+@description('Principal ID of the user executing the deployment. Used to grant permissions for local development. Optional.')
+param principalId string = ''
+
 // ============================================================================
 // Variables
 // ============================================================================
@@ -162,6 +165,7 @@ module roleAssignments 'modules/role-assignments.bicep' = {
     storageAccountName: storage.outputs.storageAccountName
     searchServiceName: aiSearch.outputs.searchServiceName
     cognitiveServicesAccountName: foundryProject.outputs.foundryAccountName
+    userPrincipalId: principalId
   }
 }
 

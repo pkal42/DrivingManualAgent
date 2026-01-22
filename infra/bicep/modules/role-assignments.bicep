@@ -45,6 +45,9 @@ param searchServiceName string
 @description('Name of the Cognitive Services (Foundry) account')
 param cognitiveServicesAccountName string
 
+@description('Principal ID of the user executing the deployment (for dev environment access). Optional.')
+param userPrincipalId string = ''
+
 // ============================================================================
 // Existing Resources
 // ============================================================================
@@ -215,3 +218,31 @@ output searchIndexDataRoleAssignmentId string = searchIndexDataRoleAssignment.id
 
 @description('Search service role assignment ID')
 output searchServiceRoleAssignmentId string = searchServiceRoleAssignment.id
+
+// ============================================================================
+// User Role Assignments (Development Access)
+// ============================================================================
+
+// Grant the user access to search index data (if userPrincipalId is provided)
+resource userSearchIndexDataRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(userPrincipalId)) {
+  name: guid(searchService.id, userPrincipalId, searchIndexDataContributorRoleId)
+  scope: searchService
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', searchIndexDataContributorRoleId)
+    principalId: userPrincipalId
+    principalType: 'User'
+    description: 'Grants user access to query and manage search indexes'
+  }
+}
+
+// Grant the user access to storage blob data (if userPrincipalId is provided)
+resource userStorageBlobDataRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!empty(userPrincipalId)) {
+  name: guid(storageAccount.id, userPrincipalId, storageBlobDataContributorRoleId)
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+    principalId: userPrincipalId
+    principalType: 'User'
+    description: 'Grants user access to read/write blob storage for documents and images'
+  }
+}

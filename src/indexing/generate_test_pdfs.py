@@ -5,7 +5,7 @@ This script creates sample driving manual PDFs for testing the indexer pipeline.
 Uses reportlab to generate multi-page PDFs with text and placeholder images.
 
 Requirements:
-    pip install reportlab Pillow
+    pip install reportlab
 
 Usage:
     python generate_test_pdfs.py --output-dir ../../../data/manuals

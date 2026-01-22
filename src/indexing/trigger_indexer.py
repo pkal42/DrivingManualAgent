@@ -50,6 +50,10 @@ from azure.core.credentials import AzureKeyCredential
 from azure.core.exceptions import AzureError, ResourceNotFoundError
 from azure.identity import DefaultAzureCredential
 from azure.search.documents.indexes import SearchIndexerClient
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -197,7 +201,7 @@ class IndexerRunner:
             # Build status dictionary
             status = {
                 "indexer_name": self.indexer_name,
-                "status": indexer_status.status.value if indexer_status.status else "unknown",
+                "status": getattr(indexer_status.status, 'value', indexer_status.status) if indexer_status.status else "unknown",
                 "execution_history": []
             }
             
@@ -206,7 +210,7 @@ class IndexerRunner:
                 latest = indexer_status.execution_history[0]
                 
                 status["last_result"] = {
-                    "status": latest.status.value if latest.status else "unknown",
+                    "status": getattr(latest.status, 'value', latest.status) if latest.status else "unknown",
                     "start_time": latest.start_time.isoformat() if latest.start_time else None,
                     "end_time": latest.end_time.isoformat() if latest.end_time else None,
                     "items_processed": getattr(latest, 'items_processed', 0),
@@ -220,7 +224,7 @@ class IndexerRunner:
                 # Add execution history
                 for execution in indexer_status.execution_history[:10]:  # Last 10 executions
                     status["execution_history"].append({
-                        "status": execution.status.value if execution.status else "unknown",
+                        "status": getattr(execution.status, 'value', execution.status) if execution.status else "unknown",
                         "start_time": execution.start_time.isoformat() if execution.start_time else None,
                         "end_time": execution.end_time.isoformat() if execution.end_time else None,
                         "items_processed": getattr(execution, 'items_processed', 0),

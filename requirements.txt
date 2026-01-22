@@ -4,14 +4,12 @@
 azure-identity>=1.12.0                    # Managed identity and authentication
 azure-search-documents>=11.4.0            # Azure AI Search client library
 azure-storage-blob>=12.19.0               # Blob storage for PDFs
-azure-ai-documentintelligence>=1.0.0      # Document Intelligence for OCR and text extraction
 
 # OpenAI SDK
 openai>=1.0.0                             # Azure OpenAI for embeddings
 
 # PDF Generation (for testing only)
 reportlab>=4.0.0                          # PDF generation library
-Pillow>=10.0.0                            # Image processing
 
 # Configuration and Validation
 pydantic>=2.0.0                  # Type-safe configuration with validation

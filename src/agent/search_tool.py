@@ -85,7 +85,7 @@ def create_search_tool(config: Optional[AgentConfig] = None) -> Dict[str, Any]:
     # This configuration dictionary will be used when creating the agent.
     # 
     # Index contains character-based chunks (1000 chars, 200 overlap)
-    # extracted via Azure Document Intelligence with OCR support.
+    # extracted via Azure AI Search native text extraction
     search_tool_config = {
         "type": "azure_ai_search",
         "endpoint": config.search_endpoint,
