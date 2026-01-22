@@ -59,24 +59,47 @@ Please refer to the [Indexing Documentation](../../src/indexing/README.md) for d
 
 ### Full Environment Deployment
 
-Use the subscription-scoped orchestrator to create the resource group, Foundry project, Azure AI Search, storage, and RBAC wiring in a single pass.
+You can deploy the infrastructure using the provided helper script (recommended) or manually via Azure CLI.
+
+#### Option 1: Automated Script (Recommended)
+
+This script automatically retrieves your user ID and grants you the necessary RBAC roles ("Search Index Data Contributor" and "Storage Blob Data Contributor") so you can verify the deployment immediately.
 
 ```powershell
 # Navigate to the Bicep directory
 cd infra/bicep
 
+# Run the deployment script
+.\deploy-infra.ps1
+```
+
+#### Option 2: Manual Azure CLI
+
+Use the subscription-scoped orchestrator to create the resource group, Foundry project, Azure AI Search, storage, and RBAC wiring.
+
+**Note**: To grant yourself access, pass your principal ID using the `principalId` parameter.
+
+```powershell
+# Navigate to the Bicep directory
+cd infra/bicep
+
+# Get your user principal ID
+$myPrincipalId = az ad signed-in-user show --query id -o tsv
+
 # Optional preview (what-if)
 az deployment sub what-if `
   --location eastus2 `
   --template-file main.bicep `
-  --parameters parameters/dev.bicepparam
+  --parameters parameters/dev.bicepparam `
+  --parameters principalId=$myPrincipalId
 
 # Deploy and name the run so you can query outputs later
 az deployment sub create `
   --location eastus2 `
   --name driving-manual-main `
   --template-file main.bicep `
-  --parameters parameters/dev.bicepparam
+  --parameters parameters/dev.bicepparam `
+  --parameters principalId=$myPrincipalId
 
 # Retrieve the resource group emitted by the deployment
 az deployment sub show `
